@@ -22,16 +22,32 @@ from agents.pipeline import analyze_page_pipeline
 from services.redis_client import get_redis, init_redis
 from models.requests import AnalyzePageRequest, EventRequest
 from models.responses import AnalyzePageResponse, EventResponse
+from models.authenticity import (
+    AuthenticityCheckRequest,
+    AuthenticityCheckResponse,
+    BatchAuthenticityRequest,
+    BatchAuthenticityResponse
+)
 from auth.dependencies import get_current_user, get_optional_user
 
-# Initialize Weave for observability
-weave.init(os.getenv("WANDB_PROJECT", "interestlens"))
+# Initialize Weave for observability (optional - skip if not configured)
+try:
+    if os.getenv("WANDB_API_KEY") and os.getenv("WANDB_API_KEY") != "your-wandb-api-key":
+        weave.init(os.getenv("WANDB_PROJECT", "interestlens"))
+    else:
+        print("Weave not configured - running without observability")
+except Exception as e:
+    print(f"Weave init skipped: {e}")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize services on startup"""
-    await init_redis()
+    try:
+        await init_redis()
+        print("Redis connected successfully")
+    except Exception as e:
+        print(f"Redis not available - running without caching: {e}")
     yield
 
 
@@ -73,11 +89,13 @@ async def health():
 @weave.op()
 async def analyze_page(
     request: AnalyzePageRequest,
-    user: Optional[dict] = Depends(get_optional_user)
+    user: Optional[dict] = Depends(get_optional_user),
+    check_authenticity: bool = True
 ):
     """
     Analyze a page and return scored items.
     Works in limited mode without auth (no personalization).
+    Set check_authenticity=true to run authenticity checks on news items.
     """
     user_id = user["id"] if user else None
 
@@ -86,7 +104,8 @@ async def analyze_page(
         dom_outline=request.dom_outline,
         items=request.items,
         screenshot_base64=request.screenshot_base64,
-        user_id=user_id
+        user_id=user_id,
+        check_authenticity=check_authenticity
     )
 
     return result
@@ -126,6 +145,117 @@ async def preview_url(url: str, user: Optional[dict] = Depends(get_optional_user
 
     preview = await fetch_url_preview(url)
     return preview
+
+
+# ============= Authenticity Endpoints =============
+
+@app.post("/check_authenticity", response_model=AuthenticityCheckResponse)
+@weave.op()
+async def check_authenticity(
+    request: AuthenticityCheckRequest,
+    user: Optional[dict] = Depends(get_optional_user)
+):
+    """
+    Check authenticity of a single article.
+    Extracts claims and verifies against cross-reference sources.
+    """
+    from agents.authenticity import authenticity_agent
+
+    result = await authenticity_agent(
+        item_id=request.item_id,
+        url=request.url,
+        text=request.text,
+        check_depth=request.check_depth
+    )
+
+    return AuthenticityCheckResponse(
+        item_id=result.item_id,
+        authenticity_score=result.authenticity_score,
+        confidence=result.confidence,
+        verification_status=result.verification_status,
+        sources_checked=result.sources_checked,
+        corroborating_count=result.corroborating_count,
+        conflicting_count=result.conflicting_count,
+        explanation=result.explanation,
+        checked_at=result.checked_at,
+        processing_time_ms=result.processing_time_ms
+    )
+
+
+@app.post("/check_authenticity/batch", response_model=BatchAuthenticityResponse)
+@weave.op()
+async def check_authenticity_batch(
+    request: BatchAuthenticityRequest,
+    user: Optional[dict] = Depends(get_optional_user)
+):
+    """
+    Batch authenticity check for multiple items.
+    Runs checks in parallel for performance.
+    """
+    from agents.authenticity import authenticity_agent
+    import asyncio
+    import time
+
+    start_time = time.time()
+    semaphore = asyncio.Semaphore(request.max_concurrent)
+
+    async def check_one(item: AuthenticityCheckRequest):
+        async with semaphore:
+            result = await authenticity_agent(
+                item_id=item.item_id,
+                url=item.url,
+                text=item.text,
+                check_depth=item.check_depth
+            )
+            return AuthenticityCheckResponse(
+                item_id=result.item_id,
+                authenticity_score=result.authenticity_score,
+                confidence=result.confidence,
+                verification_status=result.verification_status,
+                sources_checked=result.sources_checked,
+                corroborating_count=result.corroborating_count,
+                conflicting_count=result.conflicting_count,
+                explanation=result.explanation,
+                checked_at=result.checked_at,
+                processing_time_ms=result.processing_time_ms
+            )
+
+    results = await asyncio.gather(
+        *[check_one(item) for item in request.items],
+        return_exceptions=True
+    )
+
+    valid_results = [r for r in results if isinstance(r, AuthenticityCheckResponse)]
+
+    return BatchAuthenticityResponse(
+        results=valid_results,
+        total_processing_time_ms=int((time.time() - start_time) * 1000)
+    )
+
+
+@app.get("/authenticity_status/{item_id}")
+@weave.op()
+async def get_authenticity_status(item_id: str):
+    """
+    Get the authenticity check status/result for an item.
+    Returns cached result if available.
+    """
+    from services.redis_client import get_cached_authenticity
+
+    result = await get_cached_authenticity(item_id)
+
+    if result:
+        return {
+            "status": "completed",
+            "item_id": item_id,
+            "result": result
+        }
+
+    return {
+        "status": "not_found",
+        "item_id": item_id,
+        "message": "No authenticity check found for this item"
+    }
 
 
 if __name__ == "__main__":

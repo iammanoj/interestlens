@@ -9,6 +9,10 @@ class ScoredItem(BaseModel):
     score: int
     topics: List[str]
     why: str
+    # Authenticity fields (optional, populated when authenticity check is performed)
+    authenticity_score: Optional[int] = None
+    authenticity_status: Optional[str] = None  # "verified", "partially_verified", "unverified", "disputed"
+    authenticity_explanation: Optional[str] = None
 
 
 class ProfileSummary(BaseModel):

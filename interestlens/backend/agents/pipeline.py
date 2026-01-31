@@ -1,11 +1,12 @@
 """
-3-Agent Pipeline for page analysis using Google Gemini
-Agents: Extractor -> Scorer -> Explainer
+4-Agent Pipeline for page analysis using Google Gemini
+Agents: Extractor -> Scorer -> Explainer + Authenticity (parallel)
 All calls traced with Weave
 """
 
 import os
-from typing import List, Optional
+import asyncio
+from typing import List, Optional, Dict
 import weave
 import google.generativeai as genai
 
@@ -14,13 +15,14 @@ from models.responses import AnalyzePageResponse, ScoredItem, ProfileSummary
 from models.profile import UserProfile
 from services.profile import get_user_profile
 from services.redis_client import get_cached_embedding, cache_embedding
+from agents.authenticity import run_authenticity_checks, is_likely_news_article
 
 # Configure Gemini
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
 # Models
-vision_model = genai.GenerativeModel("gemini-1.5-pro")
-fast_model = genai.GenerativeModel("gemini-1.5-flash")
+vision_model = genai.GenerativeModel("gemini-2.0-flash")
+fast_model = genai.GenerativeModel("gemini-2.0-flash")
 embedding_model = "models/text-embedding-004"
 
 # Topic categories
@@ -294,10 +296,11 @@ async def analyze_page_pipeline(
     dom_outline: DOMOutline,
     items: List[PageItem],
     screenshot_base64: Optional[str],
-    user_id: Optional[str]
+    user_id: Optional[str],
+    check_authenticity: bool = True
 ) -> AnalyzePageResponse:
     """
-    Main pipeline: Extractor -> Scorer -> Explainer
+    Main pipeline: Extractor -> Scorer -> (Explainer + Authenticity in parallel)
     """
     # Get user profile if authenticated
     user_profile = None
@@ -318,11 +321,42 @@ async def analyze_page_pipeline(
         user_profile
     )
 
-    # Agent 3: Generate explanations
-    explained_items = await explainer_agent(
-        scored_items,
-        user_profile
-    )
+    # Agents 3 & 4: Run Explainer and Authenticity in parallel
+    if check_authenticity:
+        # Filter to news-like items for authenticity checking
+        news_items = [
+            item for item in scored_items[:5]
+            if is_likely_news_article(item)
+        ]
+
+        # Prepare items for authenticity check (need href from original items)
+        items_for_auth = []
+        item_href_map = {i.id: i.href for i in items if i.href}
+        for scored in news_items:
+            items_for_auth.append({
+                "id": scored["id"],
+                "text": scored["text"],
+                "topics": scored["topics"],
+                "href": item_href_map.get(scored["id"], page_url),
+                "url": item_href_map.get(scored["id"], page_url)
+            })
+
+        # Run explainer and authenticity in parallel
+        explained_items, authenticity_results = await asyncio.gather(
+            explainer_agent(scored_items, user_profile),
+            run_authenticity_checks(items_for_auth, max_concurrent=3)
+        )
+
+        # Merge authenticity results into explained items
+        for item in explained_items:
+            if item.id in authenticity_results:
+                auth = authenticity_results[item.id]
+                item.authenticity_score = auth.authenticity_score
+                item.authenticity_status = auth.verification_status
+                item.authenticity_explanation = auth.explanation
+    else:
+        # Just run explainer without authenticity
+        explained_items = await explainer_agent(scored_items, user_profile)
 
     # Build response
     profile_summary = None
