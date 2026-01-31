@@ -12,6 +12,7 @@ import weave
 import httpx
 
 from models.authenticity import ArticleContent, CrossReferenceResult
+from services.weave_utils import trace_news_search, log_metric
 
 BROWSERBASE_API_URL = "https://www.browserbase.com/v1"
 BROWSERBASE_API_KEY = os.getenv("BROWSERBASE_API_KEY")
@@ -53,14 +54,23 @@ async def create_browser_session() -> str:
         return data["id"]
 
 
-@weave.op()
 async def close_browser_session(session_id: str) -> None:
     """Close a Browserbase session"""
-    async with httpx.AsyncClient(timeout=EXTRACTION_TIMEOUT) as client:
-        await client.post(
-            f"{BROWSERBASE_API_URL}/sessions/{session_id}/close",
-            headers={"X-BB-API-Key": BROWSERBASE_API_KEY}
-        )
+    try:
+        async with httpx.AsyncClient(timeout=EXTRACTION_TIMEOUT) as client:
+            await client.post(
+                f"{BROWSERBASE_API_URL}/sessions/{session_id}",
+                headers={
+                    "X-BB-API-Key": BROWSERBASE_API_KEY,
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "status": "REQUEST_RELEASE",
+                    "projectId": BROWSERBASE_PROJECT_ID
+                }
+            )
+    except Exception as e:
+        print(f"Error closing session {session_id}: {e}")
 
 
 @weave.op()
@@ -71,7 +81,9 @@ async def extract_article_content(url: str) -> Optional[ArticleContent]:
     """
     session_id = None
     try:
+        print(f"[BROWSERBASE] Creating session for: {url}")
         session_id = await create_browser_session()
+        print(f"[BROWSERBASE] Session created: {session_id}")
 
         # Get the session's CDP endpoint for browser automation
         async with httpx.AsyncClient(timeout=EXTRACTION_TIMEOUT) as client:
@@ -86,7 +98,9 @@ async def extract_article_content(url: str) -> Optional[ArticleContent]:
             )
 
             if response.status_code not in [200, 201]:
+                print(f"[BROWSERBASE ERROR] Page navigation failed: {response.status_code} - {response.text}")
                 return None
+            print(f"[BROWSERBASE] Page navigation success")
 
             page_data = response.json()
             page_id = page_data.get("id", "default")
@@ -187,7 +201,9 @@ async def extract_article_content(url: str) -> Optional[ArticleContent]:
             )
 
     except Exception as e:
-        print(f"Error extracting article: {e}")
+        print(f"[BROWSERBASE ERROR] Error extracting article: {e}")
+        import traceback
+        traceback.print_exc()
         return None
     finally:
         if session_id:
@@ -205,103 +221,111 @@ async def search_news_sources(
 ) -> List[CrossReferenceResult]:
     """
     Search for the same news story across multiple sources.
-    Uses Google News search via Browserbase.
+    Uses DuckDuckGo News search as a simple fallback (no browser needed).
     """
-    session_id = None
+    import time
+    start_time = time.time()
     results = []
+    search_source = "none"
 
     try:
-        session_id = await create_browser_session()
+        print(f"[NEWS_SEARCH] Searching for: {topic}")
 
-        # Search Google News
+        # Use DuckDuckGo News API (no auth required)
         search_query = topic.replace(" ", "+")
-        search_url = f"https://news.google.com/search?q={search_query}&hl=en-US&gl=US&ceid=US:en"
+        search_url = f"https://duckduckgo.com/news.js?q={search_query}&o=json"
 
         async with httpx.AsyncClient(timeout=EXTRACTION_TIMEOUT) as client:
-            # Navigate to search
-            response = await client.post(
-                f"{BROWSERBASE_API_URL}/sessions/{session_id}/browser/contexts/default/pages",
-                headers={
-                    "X-BB-API-Key": BROWSERBASE_API_KEY,
-                    "Content-Type": "application/json"
-                },
-                json={"url": search_url}
-            )
+            # DuckDuckGo requires a browser-like user agent
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+                "Accept": "application/json"
+            }
 
-            if response.status_code not in [200, 201]:
-                return results
+            response = await client.get(search_url, headers=headers)
+            print(f"[NEWS_SEARCH] DuckDuckGo response: {response.status_code}")
 
-            page_data = response.json()
-            page_id = page_data.get("id", "default")
+            if response.status_code == 200:
+                try:
+                    data = response.json()
+                    articles = data.get("results", [])
+                    print(f"[NEWS_SEARCH] Found {len(articles)} articles")
+                    search_source = "duckduckgo"
 
-            # Wait for results to load
-            await asyncio.sleep(3)
+                    for article in articles[:max_results]:
+                        source_name = article.get("source", "Unknown")
 
-            # Extract search results
-            extract_script = f"""
-            () => {{
-                const results = [];
-                const articles = document.querySelectorAll('article');
-                const excludeDomain = "{exclude_domain}".toLowerCase();
+                        # Skip if from excluded domain
+                        if exclude_domain.lower() in source_name.lower():
+                            continue
 
-                for (const article of articles) {{
-                    if (results.length >= {max_results}) break;
+                        results.append(CrossReferenceResult(
+                            source_url=article.get("url", ""),
+                            source_name=source_name,
+                            title=article.get("title", ""),
+                            excerpt=article.get("excerpt", article.get("title", "")),
+                            publication_date=article.get("date"),
+                            relevance_score=0.8
+                        ))
+                except Exception as e:
+                    print(f"[NEWS_SEARCH] Error parsing response: {e}")
 
-                    const linkEl = article.querySelector('a[href^="./articles/"]');
-                    const titleEl = article.querySelector('h3, h4');
-                    const sourceEl = article.querySelector('[data-n-tid], .source');
-                    const timeEl = article.querySelector('time');
+        # If DuckDuckGo didn't work, try a simple Bing News search
+        if not results:
+            print(f"[NEWS_SEARCH] Trying Bing News fallback...")
+            bing_url = f"https://www.bing.com/news/search?q={search_query}&format=rss"
 
-                    if (linkEl && titleEl) {{
-                        const sourceName = sourceEl ? sourceEl.textContent.trim() : 'Unknown';
+            async with httpx.AsyncClient(timeout=EXTRACTION_TIMEOUT) as client:
+                response = await client.get(bing_url, headers=headers)
+                print(f"[NEWS_SEARCH] Bing response: {response.status_code}")
 
-                        // Skip if from excluded domain
-                        if (sourceName.toLowerCase().includes(excludeDomain)) continue;
+                if response.status_code == 200:
+                    # Parse RSS feed
+                    import re
+                    items = re.findall(r'<item>(.*?)</item>', response.text, re.DOTALL)
+                    print(f"[NEWS_SEARCH] Found {len(items)} Bing items")
+                    search_source = "bing"
 
-                        results.push({{
-                            title: titleEl.textContent.trim(),
-                            source: sourceName,
-                            time: timeEl ? timeEl.textContent.trim() : '',
-                            href: linkEl.href
-                        }});
-                    }}
-                }}
+                    for item in items[:max_results]:
+                        title_match = re.search(r'<title>(.*?)</title>', item)
+                        link_match = re.search(r'<link>(.*?)</link>', item)
+                        desc_match = re.search(r'<description>(.*?)</description>', item)
 
-                return results;
-            }}
-            """
+                        if title_match and link_match:
+                            title = title_match.group(1)
+                            link = link_match.group(1)
+                            desc = desc_match.group(1) if desc_match else title
 
-            eval_response = await client.post(
-                f"{BROWSERBASE_API_URL}/sessions/{session_id}/browser/contexts/default/pages/{page_id}/evaluate",
-                headers={
-                    "X-BB-API-Key": BROWSERBASE_API_KEY,
-                    "Content-Type": "application/json"
-                },
-                json={"expression": extract_script}
-            )
+                            # Extract source from URL
+                            source_domain = urlparse(link).netloc.replace("www.", "")
 
-            if eval_response.status_code == 200:
-                search_results = eval_response.json().get("result", [])
+                            if exclude_domain.lower() in source_domain.lower():
+                                continue
 
-                for item in search_results[:max_results]:
-                    results.append(CrossReferenceResult(
-                        source_url=item.get("href", ""),
-                        source_name=item.get("source", "Unknown"),
-                        title=item.get("title", ""),
-                        excerpt=item.get("title", ""),  # Use title as excerpt initially
-                        publication_date=item.get("time"),
-                        relevance_score=0.8  # Default relevance
-                    ))
+                            results.append(CrossReferenceResult(
+                                source_url=link,
+                                source_name=source_domain,
+                                title=title,
+                                excerpt=desc[:200] if desc else title,
+                                relevance_score=0.7
+                            ))
 
     except Exception as e:
-        print(f"Error searching news sources: {e}")
-    finally:
-        if session_id:
-            try:
-                await close_browser_session(session_id)
-            except:
-                pass
+        print(f"[NEWS_SEARCH ERROR] Error searching news sources: {e}")
+        import traceback
+        traceback.print_exc()
 
+    # Log search metrics
+    latency_ms = int((time.time() - start_time) * 1000)
+    trace_news_search(
+        query=topic,
+        source=search_source if search_source != "none" else "fallback",
+        results_count=len(results),
+        success=len(results) > 0,
+        latency_ms=latency_ms
+    )
+
+    print(f"[NEWS_SEARCH] Returning {len(results)} results")
     return results
 
 

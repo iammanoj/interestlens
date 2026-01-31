@@ -31,11 +31,18 @@ from models.authenticity import (
 from auth.dependencies import get_current_user, get_optional_user
 
 # Initialize Weave for observability (optional - skip if not configured)
+WEAVE_ENABLED = False
 try:
-    if os.getenv("WANDB_API_KEY") and os.getenv("WANDB_API_KEY") != "your-wandb-api-key":
-        weave.init(os.getenv("WANDB_PROJECT", "interestlens"))
+    wandb_key = os.getenv("WANDB_API_KEY", "")
+    # W&B API keys must be at least 40 characters
+    if wandb_key and len(wandb_key) >= 40 and wandb_key != "your-wandb-api-key":
+        project_name = os.getenv("WANDB_PROJECT", "interestlens")
+        weave.init(project_name)
+        WEAVE_ENABLED = True
+        print(f"Weave initialized for project: {project_name}")
     else:
-        print("Weave not configured - running without observability")
+        print("Weave not configured - API key missing or invalid (needs 40+ chars)")
+        print("Get your API key from: https://wandb.ai/authorize")
 except Exception as e:
     print(f"Weave init skipped: {e}")
 

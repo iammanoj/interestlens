@@ -29,6 +29,12 @@ from services.redis_client import (
     cache_authenticity_result,
     get_cached_authenticity
 )
+from services.weave_utils import (
+    trace_authenticity_check,
+    trace_gemini_call,
+    log_metric,
+    timed_operation
+)
 
 # Configure Gemini
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
@@ -107,6 +113,7 @@ Return ONLY valid JSON (no markdown, no code blocks):
 If no cross-references were found, set verification_status to "unverified" and explain that no corroborating sources were available."""
 
 
+@timed_operation("extract_claims")
 async def extract_claims(title: str, text: str) -> tuple[str, str, List[FactClaim]]:
     """
     Extract factual claims from article text using Gemini.
@@ -121,10 +128,13 @@ async def extract_claims(title: str, text: str) -> tuple[str, str, List[FactClai
     )
 
     print(f"[DEBUG] Extracting claims from: {title[:50]}...")
+    gemini_start = time.time()
 
     try:
         response = await fast_model.generate_content_async(prompt)
         response_text = response.text.strip()
+        gemini_latency = int((time.time() - gemini_start) * 1000)
+        trace_gemini_call("extract_claims", "gemini-2.0-flash-lite", latency_ms=gemini_latency)
         print(f"[DEBUG] Gemini response: {response_text[:200]}...")
 
         # Clean up response (remove markdown code blocks if present)
@@ -285,19 +295,11 @@ async def authenticity_agent(
     )
 
     try:
-        # Step 1: Extract article content
+        # Step 1: Use provided text (Browserbase extraction disabled for now)
         print(f"[DEBUG] Starting authenticity check for: {url}")
-        article_content = await extract_article_content(url)
-        print(f"[DEBUG] Browserbase result: {article_content is not None}")
-
-        # Use provided text if extraction failed
-        article_text = article_content.full_text if article_content else text
-        article_title = article_content.title if article_content else ""
-        print(f"[DEBUG] Article text length: {len(article_text)}, title: {article_title[:50] if article_title else 'None'}")
-
-        if not article_text or len(article_text) < 100:
-            article_text = text  # Fallback to provided text
-            print(f"[DEBUG] Using fallback text: {text[:100]}...")
+        article_text = text
+        article_title = text[:100] if text else ""
+        print(f"[DEBUG] Using provided text, length: {len(article_text)}")
 
         # Step 2: Extract claims
         print(f"[DEBUG] Calling extract_claims...")
@@ -327,13 +329,20 @@ async def authenticity_agent(
 
         # Step 3: Search for cross-references
         search_topic = main_topic or article_title or text[:100]
-        exclude_domain = article_content.source_domain if article_content else ""
+        # Extract domain from URL for exclusion
+        from urllib.parse import urlparse
+        parsed_url = urlparse(url)
+        exclude_domain = parsed_url.netloc.replace("www.", "") if url else ""
+
+        print(f"[DEBUG] Searching for cross-references on topic: {search_topic}")
+        print(f"[DEBUG] Excluding domain: {exclude_domain}")
 
         cross_refs = await search_news_sources(
             topic=search_topic,
             exclude_domain=exclude_domain,
             max_results=5 if check_depth == "standard" else 3
         )
+        print(f"[DEBUG] Found {len(cross_refs)} cross-reference sources")
 
         # Step 4: Fetch cross-reference content (for thorough checks)
         if check_depth == "thorough" and cross_refs:
@@ -366,6 +375,17 @@ async def authenticity_agent(
 
         # Cache result
         await cache_authenticity_result(item_id, result.model_dump())
+
+        # Log trace for observability
+        trace_authenticity_check(
+            item_id=item_id,
+            url=url,
+            claims_count=len(claims),
+            sources_count=len(cross_refs),
+            score=score,
+            status=status,
+            processing_ms=result.processing_time_ms
+        )
 
         return result
 
