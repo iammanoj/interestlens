@@ -1,0 +1,261 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  background: #1a1a2e;
+  color: #eee;
+  font-size: 14px;
+}
+
+.sidepanel {
+  padding: 16px;
+  min-height: 100vh;
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  color: #888;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #333;
+}
+
+.header h1 {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.mode-badge {
+  background: #ff6b6b;
+  color: white;
+  font-size: 10px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.login-prompt {
+  background: #2a2a4a;
+  padding: 20px;
+  border-radius: 8px;
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+.login-prompt p {
+  margin-bottom: 12px;
+  color: #aaa;
+}
+
+.login-btn {
+  background: #4285f4;
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.login-btn:hover {
+  background: #3367d6;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #2a2a4a;
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.logout-btn {
+  background: transparent;
+  color: #ff6b6b;
+  border: 1px solid #ff6b6b;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ranked-list h2 {
+  font-size: 14px;
+  color: #888;
+  margin-bottom: 12px;
+}
+
+.empty {
+  color: #666;
+  text-align: center;
+  padding: 20px;
+}
+
+.item-card {
+  background: #2a2a4a;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 10px;
+  transition: transform 0.2s;
+}
+
+.item-card:hover {
+  transform: translateX(4px);
+}
+
+.item-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.rank {
+  color: #888;
+  font-size: 12px;
+}
+
+.score {
+  background: linear-gradient(135deg, #FFD700, #FFA500);
+  color: #000;
+  font-weight: bold;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+.item-topics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.topic-tag {
+  background: #3a3a5a;
+  color: #aaa;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.item-why {
+  font-size: 12px;
+  color: #888;
+  line-height: 1.4;
+}
+
+.feedback {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.feedback button {
+  background: transparent;
+  border: 1px solid #444;
+  padding: 4px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.feedback button:hover {
+  background: #3a3a5a;
+}
+
+.profile-section {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid #333;
+}
+
+.profile-section h2 {
+  font-size: 14px;
+  color: #888;
+  margin-bottom: 12px;
+}
+
+.topic-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.topic-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.topic-name {
+  width: 80px;
+  font-size: 12px;
+  color: #aaa;
+}
+
+.bar {
+  flex: 1;
+  height: 8px;
+  background: #333;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4A90D9, #63B3ED);
+  border-radius: 4px;
+  transition: width 0.3s;
+}
+
+.topic-score {
+  width: 30px;
+  font-size: 11px;
+  color: #666;
+  text-align: right;
+}
+
+.footer {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid #333;
+  display: flex;
+  justify-content: space-between;
+}
+
+.settings-btn,
+.voice-btn {
+  background: #2a2a4a;
+  color: #aaa;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.2s;
+}
+
+.settings-btn:hover,
+.voice-btn:hover {
+  background: #3a3a5a;
+  color: #fff;
+}

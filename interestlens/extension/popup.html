@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>InterestLens</title>
+  <style>
+    body {
+      width: 300px;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+    }
+    h1 {
+      font-size: 18px;
+      margin-bottom: 8px;
+    }
+    p {
+      color: #888;
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+    button {
+      width: 100%;
+      background: #4A90D9;
+      color: white;
+      border: none;
+      padding: 12px;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #3a7bc8;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔍 InterestLens</h1>
+  <p>Your web, ranked for you.</p>
+  <button id="open-panel">Open Side Panel</button>
+
+  <script>
+    document.getElementById('open-panel').addEventListener('click', async () => {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab.id) {
+        chrome.sidePanel.open({ tabId: tab.id });
+      }
+      window.close();
+    });
+  </script>
+</body>
+</html>

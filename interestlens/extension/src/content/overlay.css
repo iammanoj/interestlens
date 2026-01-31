@@ -1,0 +1,82 @@
+/**
+ * InterestLens Overlay Styles
+ */
+
+.interestlens-highlight {
+  outline: 2px solid #FFD700 !important;
+  box-shadow: 0 0 10px rgba(255, 215, 0, 0.5) !important;
+  position: relative !important;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+/* Top 2 items get gold highlight */
+.interestlens-highlight[style*="--interestlens-rank: 1"],
+.interestlens-highlight[style*="--interestlens-rank: 2"] {
+  outline-color: #FFD700;
+  box-shadow: 0 0 15px rgba(255, 215, 0, 0.6);
+}
+
+/* Items 3-5 get blue highlight */
+.interestlens-highlight[style*="--interestlens-rank: 3"],
+.interestlens-highlight[style*="--interestlens-rank: 4"],
+.interestlens-highlight[style*="--interestlens-rank: 5"] {
+  outline-color: #4A90D9;
+  box-shadow: 0 0 10px rgba(74, 144, 217, 0.4);
+}
+
+.interestlens-highlight:hover {
+  box-shadow: 0 0 20px rgba(255, 215, 0, 0.8) !important;
+  transform: translateY(-1px);
+}
+
+.interestlens-badge {
+  position: absolute !important;
+  top: -10px !important;
+  right: -10px !important;
+  background: linear-gradient(135deg, #FFD700, #FFA500) !important;
+  color: #000 !important;
+  font-size: 11px !important;
+  font-weight: bold !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  padding: 3px 7px !important;
+  border-radius: 12px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+  z-index: 10000 !important;
+  cursor: help !important;
+  min-width: 20px !important;
+  text-align: center !important;
+  line-height: 1.2 !important;
+  transition: transform 0.2s ease !important;
+}
+
+.interestlens-badge:hover {
+  transform: scale(1.1) !important;
+}
+
+/* Tooltip on hover */
+.interestlens-badge::after {
+  content: attr(title);
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  background: rgba(0, 0, 0, 0.9);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: normal;
+  white-space: pre-wrap;
+  max-width: 250px;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s, visibility 0.2s;
+  z-index: 10001;
+  margin-bottom: 5px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.interestlens-badge:hover::after {
+  opacity: 1;
+  visibility: visible;
+}

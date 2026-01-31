@@ -1,0 +1,170 @@
+"""Voice onboarding routes using Daily + Pipecat"""
+
+import os
+import time
+from fastapi import APIRouter, Depends, HTTPException
+import httpx
+
+from auth.dependencies import get_current_user
+from services.redis_client import get_redis
+from models.profile import UserProfile, VoicePreferences
+
+router = APIRouter()
+
+DAILY_API_KEY = os.getenv("DAILY_API_KEY")
+DAILY_DOMAIN = os.getenv("DAILY_DOMAIN", "interestlens.daily.co")
+
+
+@router.post("/start-session")
+async def start_voice_session(user: dict = Depends(get_current_user)):
+    """Create a Daily room for voice onboarding"""
+
+    if not DAILY_API_KEY:
+        raise HTTPException(
+            status_code=500,
+            detail="Daily API key not configured"
+        )
+
+    # Create Daily room
+    async with httpx.AsyncClient() as client:
+        room_response = await client.post(
+            "https://api.daily.co/v1/rooms",
+            headers={"Authorization": f"Bearer {DAILY_API_KEY}"},
+            json={
+                "properties": {
+                    "exp": int(time.time()) + 3600,  # 1 hour
+                    "enable_chat": False,
+                    "enable_knocking": False,
+                    "start_audio_off": False,
+                    "start_video_off": True,
+                }
+            }
+        )
+
+        if room_response.status_code != 200:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to create Daily room"
+            )
+
+        room = room_response.json()
+
+        # Create meeting token for user
+        token_response = await client.post(
+            "https://api.daily.co/v1/meeting-tokens",
+            headers={"Authorization": f"Bearer {DAILY_API_KEY}"},
+            json={
+                "properties": {
+                    "room_name": room["name"],
+                    "user_id": user["id"],
+                    "user_name": user.get("name", "User"),
+                    "enable_recording": False,
+                }
+            }
+        )
+
+        if token_response.status_code != 200:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to create meeting token"
+            )
+
+        token = token_response.json()["token"]
+
+    # TODO: Start Pipecat bot in the room (requires separate process)
+    # For hackathon, this could be a separate service or triggered via webhook
+
+    return {
+        "room_url": room["url"],
+        "room_name": room["name"],
+        "token": token,
+        "expires_at": room["config"]["exp"]
+    }
+
+
+@router.get("/preferences")
+async def get_voice_preferences(user: dict = Depends(get_current_user)):
+    """Get user's voice onboarding preferences"""
+    redis = await get_redis()
+    profile_data = await redis.json().get(f"user:{user['id']}")
+
+    if not profile_data:
+        return {
+            "voice_onboarding_complete": False,
+            "preferences": None
+        }
+
+    profile = UserProfile(**profile_data)
+
+    return {
+        "voice_onboarding_complete": profile.voice_onboarding_complete,
+        "preferences": profile.voice_preferences.model_dump() if profile.voice_preferences else None,
+        "last_updated": None  # TODO: Add timestamp tracking
+    }
+
+
+@router.delete("/preferences")
+async def clear_voice_preferences(user: dict = Depends(get_current_user)):
+    """Clear voice preferences and allow re-onboarding"""
+    redis = await get_redis()
+    profile_key = f"user:{user['id']}"
+
+    profile_data = await redis.json().get(profile_key)
+    if profile_data:
+        profile = UserProfile(**profile_data)
+        profile.voice_onboarding_complete = False
+        profile.voice_preferences = None
+
+        # Also clear topic affinities from voice
+        # (keep click-based affinities)
+        await redis.json().set(profile_key, "$", profile.model_dump())
+
+    return {
+        "status": "cleared",
+        "message": "Voice preferences cleared. You can set them up again anytime."
+    }
+
+
+@router.post("/save-preferences")
+async def save_voice_preferences(
+    preferences: VoicePreferences,
+    user: dict = Depends(get_current_user)
+):
+    """
+    Save extracted voice preferences.
+    Called by the Pipecat bot after conversation ends.
+    """
+    redis = await get_redis()
+    profile_key = f"user:{user['id']}"
+
+    profile_data = await redis.json().get(profile_key)
+    if not profile_data:
+        raise HTTPException(status_code=404, detail="User profile not found")
+
+    profile = UserProfile(**profile_data)
+
+    # Apply voice preferences to topic affinities
+    for topic_pref in preferences.topics:
+        weight = topic_pref.intensity
+        if topic_pref.sentiment == "dislike":
+            weight = -weight
+        elif topic_pref.sentiment == "neutral":
+            weight = 0
+
+        profile.topic_affinity[topic_pref.topic] = weight
+
+        # Add subtopic preferences
+        for subtopic in topic_pref.subtopics:
+            profile.topic_affinity[subtopic] = weight * 0.8
+        for avoid in topic_pref.avoid_subtopics:
+            profile.topic_affinity[avoid] = -abs(weight) * 0.5
+
+    profile.voice_onboarding_complete = True
+    profile.voice_preferences = preferences
+
+    await redis.json().set(profile_key, "$", profile.model_dump())
+
+    return {
+        "status": "saved",
+        "topics_count": len(preferences.topics)
+    }
