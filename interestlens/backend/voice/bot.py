@@ -115,7 +115,8 @@ class OnboardingAgent:
         user_id: str,
         room_name: str,
         on_preferences_update: Optional[Callable[[VoicePreferences], None]] = None,
-        on_session_complete: Optional[Callable[[VoicePreferences], None]] = None
+        on_session_complete: Optional[Callable[[VoicePreferences], None]] = None,
+        on_transcription: Optional[Callable[[str, str], None]] = None
     ):
         """
         Initialize the onboarding agent.
@@ -125,6 +126,7 @@ class OnboardingAgent:
             room_name: The Daily room name for this session
             on_preferences_update: Callback when preferences are updated (for WebSocket)
             on_session_complete: Callback when session is complete
+            on_transcription: Callback for real-time transcription (text, speaker)
         """
         self.state = ConversationState(
             user_id=user_id,
@@ -132,6 +134,7 @@ class OnboardingAgent:
         )
         self.on_preferences_update = on_preferences_update
         self.on_session_complete = on_session_complete
+        self.on_transcription = on_transcription
         self._lock = asyncio.Lock()
 
     def get_opening_message(self) -> str:
@@ -158,6 +161,9 @@ class OnboardingAgent:
                 "role": "user",
                 "content": message
             })
+
+            # Notify transcription callback (user speech)
+            await self._notify_transcription(message, "user")
 
             # Check for end intent
             if detect_end_intent(message, self.state.phase):
@@ -196,6 +202,9 @@ class OnboardingAgent:
                 "role": "assistant",
                 "content": response
             })
+
+            # Notify transcription callback (assistant response)
+            await self._notify_transcription(response, "assistant")
 
             return response
 
@@ -246,6 +255,17 @@ class OnboardingAgent:
                     self.on_session_complete(preferences)
             except Exception as e:
                 print(f"Session complete callback error: {e}")
+
+    async def _notify_transcription(self, text: str, speaker: str):
+        """Notify about real-time transcription."""
+        if self.on_transcription:
+            try:
+                if asyncio.iscoroutinefunction(self.on_transcription):
+                    await self.on_transcription(text, speaker)
+                else:
+                    self.on_transcription(text, speaker)
+            except Exception as e:
+                print(f"Transcription callback error: {e}")
 
     async def _generate_response(self, user_message: str) -> str:
         """Generate a conversational response using Gemini."""

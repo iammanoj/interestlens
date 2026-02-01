@@ -9,7 +9,7 @@ from google.auth.transport import requests as google_requests
 import httpx
 
 from .jwt import create_access_token
-from services.redis_client import get_redis
+from services.redis_client import get_redis, json_get, json_set
 from models.profile import UserProfile
 
 router = APIRouter()
@@ -83,9 +83,8 @@ async def google_callback(code: str, request: Request):
     picture = idinfo.get("picture")
 
     # Get or create user profile in Redis
-    redis = await get_redis()
     profile_key = f"user:{user_id}"
-    existing_profile = await redis.json().get(profile_key)
+    existing_profile = await json_get(profile_key)
 
     if not existing_profile:
         # Create new profile
@@ -94,7 +93,7 @@ async def google_callback(code: str, request: Request):
             email=email,
             name=name
         )
-        await redis.json().set(profile_key, "$", profile.model_dump())
+        await json_set(profile_key, "$", profile.model_dump())
         profile_exists = False
     else:
         profile_exists = True
@@ -125,8 +124,7 @@ async def get_current_user_info(request: Request):
     user = await get_current_user(request)
 
     # Get full profile from Redis
-    redis = await get_redis()
-    profile_data = await redis.json().get(f"user:{user['id']}")
+    profile_data = await json_get(f"user:{user['id']}")
 
     return {
         "user": user,
@@ -151,9 +149,8 @@ async def create_dev_token(user_id: str = "dev_user_123", name: str = "Dev User"
         raise HTTPException(status_code=404, detail="Not found")
 
     # Create or update user profile
-    redis = await get_redis()
     profile_key = f"user:{user_id}"
-    existing = await redis.json().get(profile_key)
+    existing = await json_get(profile_key)
 
     if not existing:
         profile = UserProfile(
@@ -161,7 +158,7 @@ async def create_dev_token(user_id: str = "dev_user_123", name: str = "Dev User"
             email=f"{user_id}@dev.local",
             name=name
         )
-        await redis.json().set(profile_key, "$", profile.model_dump())
+        await json_set(profile_key, "$", profile.model_dump())
 
     # Create JWT
     access_token = create_access_token({

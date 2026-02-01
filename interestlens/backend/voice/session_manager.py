@@ -11,7 +11,7 @@ from typing import Dict, Optional
 from dataclasses import dataclass, asdict
 import httpx
 
-from services.redis_client import get_redis
+from services.redis_client import get_redis, json_get, json_set, json_set_field
 from models.profile import VoicePreferences
 
 
@@ -127,6 +127,7 @@ async def run_bot_process(session: SessionInfo):
     from voice.websocket import (
         get_preference_update_callback,
         get_session_complete_callback,
+        get_transcription_callback,
         manager as ws_manager
     )
 
@@ -139,6 +140,7 @@ async def run_bot_process(session: SessionInfo):
         # Create callbacks for WebSocket updates
         on_update = get_preference_update_callback(session.room_name)
         on_complete = get_session_complete_callback(session.room_name)
+        on_transcript = get_transcription_callback(session.room_name)
 
         # Wrap the completion callback to also save preferences
         async def on_session_complete(preferences: VoicePreferences):
@@ -152,7 +154,8 @@ async def run_bot_process(session: SessionInfo):
             user_id=session.user_id,
             room_name=session.room_name,
             on_preferences_update=on_update,
-            on_session_complete=on_session_complete
+            on_session_complete=on_session_complete,
+            on_transcription=on_transcript
         )
 
     except Exception as e:
@@ -173,7 +176,7 @@ async def save_session_preferences(room_name: str, user_id: str, preferences: Vo
     from models.profile import UserProfile
 
     profile_key = f"user:{user_id}"
-    profile_data = await redis.json().get(profile_key)
+    profile_data = await json_get(profile_key)
 
     if not profile_data:
         print(f"User profile not found for {user_id}")
@@ -200,7 +203,7 @@ async def save_session_preferences(room_name: str, user_id: str, preferences: Vo
     profile.voice_onboarding_complete = True
     profile.voice_preferences = preferences
 
-    await redis.json().set(profile_key, "$", profile.model_dump())
+    await json_set(profile_key, "$", profile.model_dump())
     print(f"Saved preferences for user {user_id}: {len(preferences.topics)} topics")
 
 
@@ -247,7 +250,7 @@ async def store_session_in_redis(session: SessionInfo):
         return
 
     key = f"voice_session:{session.room_name}"
-    await redis.json().set(key, "$", asdict(session))
+    await json_set(key, "$", asdict(session))
     await redis.expire(key, SESSION_TIMEOUT)
 
 
@@ -274,17 +277,15 @@ async def get_session_status(room_name: str) -> dict:
             }
 
     # Check Redis
-    redis = await get_redis()
-    if redis:
-        session_data = await redis.json().get(f"voice_session:{room_name}")
-        if session_data:
-            return {
-                "exists": True,
-                "status": session_data.get("status", "unknown"),
-                "created_at": session_data.get("created_at"),
-                "last_activity": session_data.get("last_activity"),
-                "preferences": session_data.get("preferences")
-            }
+    session_data = await json_get(f"voice_session:{room_name}")
+    if session_data:
+        return {
+            "exists": True,
+            "status": session_data.get("status", "unknown"),
+            "created_at": session_data.get("created_at"),
+            "last_activity": session_data.get("last_activity"),
+            "preferences": session_data.get("preferences")
+        }
 
     return {
         "exists": False,
@@ -304,7 +305,7 @@ async def update_session_activity(room_name: str):
     redis = await get_redis()
     if redis:
         key = f"voice_session:{room_name}"
-        await redis.json().set(key, "$.last_activity", time.time())
+        await json_set_field(key, "last_activity", time.time())
         await redis.expire(key, SESSION_TIMEOUT)
 
 
@@ -315,11 +316,9 @@ async def update_session_preferences(room_name: str, preferences: VoicePreferenc
             _active_sessions[room_name]["preferences"] = preferences.model_dump()
             _active_sessions[room_name]["last_activity"] = time.time()
 
-    redis = await get_redis()
-    if redis:
-        key = f"voice_session:{room_name}"
-        await redis.json().set(key, "$.preferences", preferences.model_dump())
-        await redis.json().set(key, "$.last_activity", time.time())
+    key = f"voice_session:{room_name}"
+    await json_set_field(key, "preferences", preferences.model_dump())
+    await json_set_field(key, "last_activity", time.time())
 
 
 async def cleanup_stale_sessions():
@@ -344,7 +343,7 @@ async def cleanup_stale_sessions():
     if redis:
         keys = await redis.keys("voice_session:*")
         for key in keys:
-            session_data = await redis.json().get(key)
+            session_data = await json_get(key)
             if session_data:
                 last_activity = session_data.get("last_activity", 0)
                 if current_time - last_activity > SESSION_TIMEOUT:

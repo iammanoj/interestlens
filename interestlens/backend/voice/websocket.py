@@ -81,6 +81,15 @@ class ConnectionManager:
         }
         await self.broadcast_to_room(room_name, message)
 
+    async def send_transcription(self, room_name: str, text: str, speaker: str):
+        """Send a real-time transcription update to all connected clients."""
+        message = {
+            "type": "transcription",
+            "text": text,
+            "speaker": speaker  # "user" or "assistant"
+        }
+        await self.broadcast_to_room(room_name, message)
+
     def has_connections(self, room_name: str) -> bool:
         """Check if a room has any active connections."""
         return room_name in self.active_connections and len(self.active_connections[room_name]) > 0
@@ -178,5 +187,17 @@ def get_session_complete_callback(room_name: str):
     """
     async def callback(preferences: VoicePreferences):
         await manager.send_session_complete(room_name, preferences)
+
+    return callback
+
+
+def get_transcription_callback(room_name: str):
+    """
+    Create a callback function for real-time transcription updates.
+
+    This is passed to the OnboardingAgent to stream transcript to WebSocket clients.
+    """
+    async def callback(text: str, speaker: str):
+        await manager.send_transcription(room_name, text, speaker)
 
     return callback

@@ -80,7 +80,8 @@ async def create_voice_pipeline(
     user_id: str,
     room_name: str,
     on_preferences_update: Optional[Callable[[VoicePreferences], None]] = None,
-    on_session_complete: Optional[Callable[[VoicePreferences], None]] = None
+    on_session_complete: Optional[Callable[[VoicePreferences], None]] = None,
+    on_transcription: Optional[Callable[[str, str], None]] = None
 ) -> tuple[PipelineRunner, PipelineTask]:
     """
     Create and configure the Pipecat pipeline for voice onboarding.
@@ -92,6 +93,7 @@ async def create_voice_pipeline(
         room_name: Room name for session tracking
         on_preferences_update: Callback for real-time preference updates
         on_session_complete: Callback when session ends
+        on_transcription: Callback for real-time transcription (text, speaker)
 
     Returns:
         Tuple of (PipelineRunner, PipelineTask)
@@ -101,7 +103,8 @@ async def create_voice_pipeline(
         user_id=user_id,
         room_name=room_name,
         on_preferences_update=on_preferences_update,
-        on_session_complete=on_session_complete
+        on_session_complete=on_session_complete,
+        on_transcription=on_transcription
     )
 
     # Daily transport configuration
@@ -122,10 +125,6 @@ async def create_voice_pipeline(
     tts = GoogleTTSService(
         api_key=os.getenv("GOOGLE_API_KEY"),
         voice_id="en-US-Neural2-C",  # Friendly female voice
-        params={
-            "speaking_rate": 1.0,
-            "pitch": 0.0,
-        }
     )
 
     # Create the onboarding processor
@@ -190,7 +189,8 @@ async def run_voice_bot(
     user_id: str,
     room_name: str,
     on_preferences_update: Optional[Callable[[VoicePreferences], None]] = None,
-    on_session_complete: Optional[Callable[[VoicePreferences], None]] = None
+    on_session_complete: Optional[Callable[[VoicePreferences], None]] = None,
+    on_transcription: Optional[Callable[[str, str], None]] = None
 ):
     """
     Run the voice bot until completion.
@@ -204,6 +204,7 @@ async def run_voice_bot(
         room_name: Room name
         on_preferences_update: Callback for preference updates
         on_session_complete: Callback for session completion
+        on_transcription: Callback for real-time transcription (text, speaker)
     """
     runner, task, agent = await create_voice_pipeline(
         room_url=room_url,
@@ -211,7 +212,8 @@ async def run_voice_bot(
         user_id=user_id,
         room_name=room_name,
         on_preferences_update=on_preferences_update,
-        on_session_complete=on_session_complete
+        on_session_complete=on_session_complete,
+        on_transcription=on_transcription
     )
 
     try:
@@ -232,7 +234,8 @@ async def create_voice_pipeline_with_stt(
     user_id: str,
     room_name: str,
     on_preferences_update: Optional[Callable[[VoicePreferences], None]] = None,
-    on_session_complete: Optional[Callable[[VoicePreferences], None]] = None
+    on_session_complete: Optional[Callable[[VoicePreferences], None]] = None,
+    on_transcription: Optional[Callable[[str, str], None]] = None
 ) -> tuple[PipelineRunner, PipelineTask]:
     """
     Alternative pipeline using Google STT for transcription.
@@ -244,7 +247,8 @@ async def create_voice_pipeline_with_stt(
         user_id=user_id,
         room_name=room_name,
         on_preferences_update=on_preferences_update,
-        on_session_complete=on_session_complete
+        on_session_complete=on_session_complete,
+        on_transcription=on_transcription
     )
 
     transport = DailyTransport(
