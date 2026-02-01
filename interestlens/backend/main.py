@@ -9,8 +9,10 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 import weave
-from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Query
+from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -97,6 +99,24 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Validation error handler to log request body for debugging
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    # Log the validation error with request details
+    try:
+        body = await request.body()
+        body_str = body.decode('utf-8')[:500]  # Limit to 500 chars
+        print(f"[VALIDATION ERROR] Path: {request.url.path}")
+        print(f"[VALIDATION ERROR] Body: {body_str}")
+        print(f"[VALIDATION ERROR] Errors: {exc.errors()}")
+    except Exception as e:
+        print(f"[VALIDATION ERROR] Could not read body: {e}")
+
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors()},
+    )
 
 # Include routers
 app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
