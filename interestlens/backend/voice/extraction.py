@@ -74,8 +74,10 @@ async def extract_preferences_from_message(
     )
 
     try:
+        print(f"[EXTRACTION] Extracting from message: '{message}'")
         response = await model.generate_content_async(prompt)
         text = response.text.strip()
+        print(f"[EXTRACTION] Raw response: {text[:200]}")
 
         # Clean up response - remove markdown code blocks if present
         if text.startswith("```"):
@@ -85,13 +87,14 @@ async def extract_preferences_from_message(
         text = text.strip()
 
         result = json.loads(text)
+        print(f"[EXTRACTION] Parsed result: topics={len(result.get('topics', []))}, nothing_new={result.get('nothing_new')}")
         return result
 
     except json.JSONDecodeError as e:
-        print(f"Failed to parse extraction response: {e}")
+        print(f"[EXTRACTION] Failed to parse response: {e}, text was: {text[:200] if text else 'None'}")
         return {"topics": [], "content_preferences": None, "nothing_new": True}
     except Exception as e:
-        print(f"Extraction error: {e}")
+        print(f"[EXTRACTION] Error: {type(e).__name__}: {e}")
         return {"topics": [], "content_preferences": None, "nothing_new": True}
 
 
@@ -109,8 +112,12 @@ def merge_preferences(
     Returns:
         Updated VoicePreferences
     """
-    if new_extraction.get("nothing_new", True):
+    # Check if there are actually topics to merge (don't rely solely on nothing_new flag)
+    has_topics = len(new_extraction.get("topics", [])) > 0
+    if not has_topics and new_extraction.get("nothing_new", True):
         return existing
+
+    print(f"[MERGE] Merging {len(new_extraction.get('topics', []))} new topics")
 
     # Merge topics
     existing_topics = {t.topic.lower(): t for t in existing.topics}
