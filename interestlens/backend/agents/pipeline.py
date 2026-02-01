@@ -77,11 +77,25 @@ Return JSON:
     else:
         response = await fast_model.generate_content_async(prompt)
 
+    print("Response text used in extractor agent:", response.text)
+    print("Type of response.text:", type(response.text))
+
+    json_text = response.text
+    if response.text.index("```json") != -1:
+        start = response.text.index("```json") + len("```json")
+        end = response.text.index("```", start)
+        print(start)
+        print(end)
+        json_text = response.text[start:end].strip()
+
+    print(json_text)
+
     # Parse response (simplified - add proper JSON parsing in production)
     try:
         import json
-        result = json.loads(response.text)
-    except:
+        result = json.loads(json_text)
+    except Exception as e:
+        print("Error parsing extractor agent response:", e)
         # Fallback: treat all items as content
         result = {
             "page_type": "other",
@@ -314,6 +328,9 @@ async def analyze_page_pipeline(
         items
     )
 
+    print("Extractor result PageType:", extractor_result.get("page_type", "other"))
+    print("Number of items classified:", len(extractor_result.get("items", [])))
+
     # Agent 2: Score items
     scored_items = await scorer_agent(
         items,
@@ -347,6 +364,9 @@ async def analyze_page_pipeline(
             run_authenticity_checks(items_for_auth, max_concurrent=3)
         )
 
+        print("Explained items count:", len(explained_items))
+        print("Authenticity results count:", len(authenticity_results))
+
         # Merge authenticity results into explained items
         for item in explained_items:
             if item.id in authenticity_results:
@@ -367,7 +387,7 @@ async def analyze_page_pipeline(
 
     return AnalyzePageResponse(
         items=explained_items,
-        page_topics=extractor_result.get("page_type", "other"),
+        page_topics=[extractor_result.get("page_type", "other")],
         profile_summary=profile_summary,
         weave_trace_url=weave.get_current_trace_url() if hasattr(weave, 'get_current_trace_url') else None
     )

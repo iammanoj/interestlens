@@ -8,11 +8,15 @@ from models.profile import UserProfile
 async def get_user_profile(user_id: str) -> Optional[UserProfile]:
     """Get user profile from Redis"""
     r = await get_redis()
-    data = await r.json().get(f"user:{user_id}")
+    try:
+        data = await r.json().get(f"user:{user_id}")
 
-    if data:
-        return UserProfile(**data)
-    return None
+        if data:
+            return UserProfile(**data)
+        return None
+    except:
+        return None
+
 
 
 async def save_user_profile(profile: UserProfile):
