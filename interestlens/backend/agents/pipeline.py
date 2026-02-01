@@ -382,6 +382,7 @@ def calculate_score(
     # Voice preferences boost/penalty - direct matching
     voice_modifier = 0.0
     if profile.voice_preferences and profile.voice_preferences.topics:
+        # Use voice_preferences.topics if available (new structure)
         topics_lower = [t.lower() for t in topics]
         for pref in profile.voice_preferences.topics:
             pref_topic_lower = pref.topic.lower()
@@ -394,6 +395,21 @@ def calculate_score(
                     elif pref.sentiment == "dislike":
                         voice_modifier -= pref.intensity * 0.5
                         logger.debug(f"[SCORE] Penalty for disliked topic '{pref.topic}' in {topics}")
+                    break
+    elif profile.voice_onboarding_complete and profile.topic_affinity:
+        # Fallback: use topic_affinity directly for voice_modifier if voice_preferences.topics is empty
+        # This handles existing profiles created before the fix
+        topics_lower = [t.lower() for t in topics]
+        for item_topic in topics_lower:
+            for affinity_topic, score in profile.topic_affinity.items():
+                affinity_lower = affinity_topic.lower()
+                if affinity_lower == item_topic or affinity_lower in item_topic or item_topic in affinity_lower:
+                    if score > 0:
+                        voice_modifier += score * 0.4
+                        logger.debug(f"[SCORE] Affinity boost for '{affinity_topic}' (score={score}) in {topics}")
+                    elif score < 0:
+                        voice_modifier += score * 0.5  # score is already negative
+                        logger.debug(f"[SCORE] Affinity penalty for '{affinity_topic}' (score={score}) in {topics}")
                     break
 
     # Prominence (simplified - could be enhanced with position data)

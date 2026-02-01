@@ -291,6 +291,30 @@ async def save_session_preferences(room_name: str, user_id: str, preferences: Vo
         for subtopic in dislike.subtopics:
             profile.topic_affinity[subtopic] = -dislike.intensity * 0.8
 
+    # IMPORTANT: Populate voice_preferences.topics from extracted_categories if empty
+    # This ensures the scoring algorithm can use voice_modifier (30% weight)
+    # The category extraction is more reliable than extract_final_preferences
+    from models.profile import TopicPreference
+    if not preferences.topics and (extracted_categories.likes or extracted_categories.dislikes):
+        print(f"[VOICE] Populating voice_preferences.topics from extracted_categories")
+        for like in extracted_categories.likes:
+            preferences.topics.append(TopicPreference(
+                topic=like.category,
+                sentiment="like",
+                intensity=like.intensity,
+                subtopics=like.subtopics,
+                avoid_subtopics=[]
+            ))
+        for dislike in extracted_categories.dislikes:
+            preferences.topics.append(TopicPreference(
+                topic=dislike.category,
+                sentiment="dislike",
+                intensity=dislike.intensity,
+                subtopics=dislike.subtopics,
+                avoid_subtopics=[]
+            ))
+        print(f"[VOICE] voice_preferences now has {len(preferences.topics)} topics")
+
     profile.voice_onboarding_complete = True
     profile.voice_preferences = preferences
 
