@@ -221,13 +221,15 @@ async def check_authenticity_batch(
     """
     Batch authenticity check for multiple items.
     Runs checks in parallel for performance.
+    Max 50 items per batch, max 10 concurrent.
     """
     from agents.authenticity import authenticity_agent
     import asyncio
     import time
 
     start_time = time.time()
-    semaphore = asyncio.Semaphore(request.max_concurrent)
+    # Use safe_max_concurrent to cap at server limit (1-10)
+    semaphore = asyncio.Semaphore(request.safe_max_concurrent)
 
     async def check_one(item: AuthenticityCheckRequest):
         async with semaphore:
@@ -346,6 +348,14 @@ async def check_authenticity_from_file(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"No valid URLs found in file. Errors: {parse_errors}"
+        )
+
+    # Limit number of URLs to prevent DoS
+    MAX_URLS_PER_FILE = 100
+    if len(urls) > MAX_URLS_PER_FILE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"File contains {len(urls)} URLs. Maximum allowed is {MAX_URLS_PER_FILE}."
         )
 
     start_time = time.time()

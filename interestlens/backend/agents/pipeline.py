@@ -221,7 +221,8 @@ async def scorer_agent(
 ) -> List[dict]:
     """
     Agent 2: Scorer
-    Calculates interest scores using embeddings and user profile
+    Calculates interest scores using embeddings and user profile.
+    Uses parallel API calls for embeddings and topic classification.
     """
     # Filter to content items only
     content_ids = {
@@ -229,33 +230,48 @@ async def scorer_agent(
         if i.get("is_content", True)
     }
 
-    scored_items = []
+    content_items = [item for item in items if item.id in content_ids]
 
-    for item in items:
-        if item.id not in content_ids:
-            continue
+    if not content_items:
+        return []
 
-        # Get embedding
-        embedding = await get_embedding(item.text, item.id)
-
-        # Classify topics
-        topics = await classify_topics(item.text)
+    # Parallelize embedding and topic classification calls
+    async def process_item(item: PageItem) -> dict:
+        # Run embedding and topic classification in parallel
+        embedding, topics = await asyncio.gather(
+            get_embedding(item.text, item.id),
+            classify_topics(item.text)
+        )
 
         # Calculate score
         score = calculate_score(item, embedding, topics, user_profile)
 
-        scored_items.append({
+        return {
             "id": item.id,
             "score": score,
             "topics": topics,
             "embedding": embedding,
             "text": item.text
-        })
+        }
+
+    # Process all items in parallel (with implicit concurrency from asyncio.gather)
+    scored_items = await asyncio.gather(
+        *[process_item(item) for item in content_items],
+        return_exceptions=True
+    )
+
+    # Filter out any exceptions and log them
+    valid_items = []
+    for i, result in enumerate(scored_items):
+        if isinstance(result, Exception):
+            logger.error(f"[SCORER] Error processing item {content_items[i].id}: {result}")
+        else:
+            valid_items.append(result)
 
     # Sort by score
-    scored_items.sort(key=lambda x: x["score"], reverse=True)
+    valid_items.sort(key=lambda x: x["score"], reverse=True)
 
-    return scored_items[:10]  # Top 10
+    return valid_items[:10]  # Top 10
 
 
 def calculate_score(

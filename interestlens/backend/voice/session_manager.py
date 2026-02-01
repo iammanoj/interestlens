@@ -21,6 +21,9 @@ DAILY_DOMAIN = os.getenv("DAILY_DOMAIN", "interestlens.daily.co")
 # Session timeout (30 minutes)
 SESSION_TIMEOUT = 1800
 
+# Maximum number of concurrent sessions to prevent memory leaks
+MAX_ACTIVE_SESSIONS = 100
+
 # In-memory session tracking (for bot processes)
 # In production, this would be replaced with proper process management
 _active_sessions: Dict[str, dict] = {}
@@ -55,6 +58,9 @@ async def start_bot_for_session(
 
     Returns:
         SessionInfo with session details
+
+    Raises:
+        RuntimeError: If max sessions limit is reached
     """
     async with _session_lock:
         # Check if session already exists
@@ -62,6 +68,11 @@ async def start_bot_for_session(
             existing = _active_sessions[room_name]
             if existing["status"] in ["starting", "active"]:
                 return SessionInfo(**existing)
+
+        # Check max sessions limit to prevent memory leaks
+        active_count = len([s for s in _active_sessions.values() if s["status"] in ["starting", "active"]])
+        if active_count >= MAX_ACTIVE_SESSIONS:
+            raise RuntimeError(f"Maximum concurrent sessions ({MAX_ACTIVE_SESSIONS}) reached. Please try again later.")
 
         # Create bot token
         bot_token = await create_bot_token(room_name)

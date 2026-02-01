@@ -104,6 +104,12 @@ async def start_voice_session(user: Optional[dict] = Depends(get_optional_user))
             room_url=room["url"],
             user_id=user_id
         )
+    except RuntimeError as e:
+        # Max sessions reached - return 503 Service Unavailable
+        raise HTTPException(
+            status_code=503,
+            detail=str(e)
+        )
     except Exception as e:
         print(f"Failed to start bot: {e}")
         # Bot failed but room is ready - user can still use text fallback
