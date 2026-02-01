@@ -209,8 +209,8 @@ async def create_voice_pipeline(
         """Handle bot joining the room."""
         logger.info(f"Bot joined room: {room_name}")
         sys.stdout.flush()
-        # Start the conversation after a short delay
-        await asyncio.sleep(1)
+        # Start the conversation with minimal delay
+        await asyncio.sleep(0.3)
         await processor.start_conversation()
 
     @transport.event_handler("on_left")

@@ -1,7 +1,7 @@
 """User profile management"""
 
 from typing import Optional, List
-from services.redis_client import get_redis
+from services.redis_client import get_redis, json_get, json_set
 from models.profile import UserProfile
 
 
@@ -21,8 +21,7 @@ async def get_user_profile(user_id: str) -> Optional[UserProfile]:
 
 async def save_user_profile(profile: UserProfile):
     """Save user profile to Redis"""
-    r = await get_redis()
-    await r.json().set(f"user:{profile.user_id}", "$", profile.model_dump())
+    await json_set(f"user:{profile.user_id}", "$", profile.model_dump())
 
 
 async def update_user_profile(user_id: str, event_type: str, item_data: dict):

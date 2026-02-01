@@ -298,50 +298,103 @@ def calculate_score(
     topics: List[str],
     profile: Optional[UserProfile]
 ) -> int:
-    """Calculate interest score (0-100)"""
-    if not profile or not profile.topic_affinity:
+    """
+    Calculate interest score (0-100).
+
+    Uses multiple signals:
+    - Text embedding similarity to user's interest vector
+    - Topic affinity scores (from voice + clicks)
+    - Voice preferences (explicit likes/dislikes)
+    - Content prominence
+    """
+    if not profile:
         # Limited mode: use prominence only
         prominence = 50  # Base score
         return prominence
 
-    # Weights
-    W_TEXT = 0.35
-    W_TOPIC = 0.30
-    W_VOICE = 0.20
-    W_PROMINENCE = 0.15
+    # Check if user has any preferences at all
+    has_preferences = (
+        profile.topic_affinity or
+        profile.voice_preferences or
+        profile.user_text_vector
+    )
+
+    if not has_preferences:
+        # New user with no preferences yet
+        return 50
+
+    # Weights - voice preferences get higher weight when available
+    has_voice = profile.voice_onboarding_complete and profile.voice_preferences
+    if has_voice:
+        W_TEXT = 0.20
+        W_TOPIC = 0.35  # Topic affinity includes voice-derived affinities
+        W_VOICE = 0.30  # Direct voice preference matching
+        W_PROMINENCE = 0.15
+    else:
+        W_TEXT = 0.35
+        W_TOPIC = 0.40
+        W_VOICE = 0.10
+        W_PROMINENCE = 0.15
 
     # Text similarity
     sim_text = 0.5  # Default
     if profile.user_text_vector and embedding:
         sim_text = cosine_similarity(embedding, profile.user_text_vector)
 
-    # Topic affinity
-    topic_score = sum(profile.topic_affinity.get(t, 0) for t in topics)
-    topic_score = sigmoid(topic_score / 3)  # Normalize
+    # Topic affinity - this includes affinities from voice onboarding
+    # The topic_affinity dict is populated from voice preferences in save_session_preferences
+    topic_score = 0.0
+    if profile.topic_affinity:
+        for t in topics:
+            # Check exact match and case-insensitive match
+            t_lower = t.lower()
+            for affinity_topic, score in profile.topic_affinity.items():
+                if affinity_topic.lower() == t_lower or t_lower in affinity_topic.lower():
+                    topic_score += score
+                    break
+        # Normalize to 0-1 range using sigmoid
+        topic_score = sigmoid(topic_score / max(len(topics), 1))
 
-    # Voice preferences boost/penalty
+    # Voice preferences boost/penalty - direct matching
     voice_modifier = 0.0
-    if profile.voice_preferences:
+    if profile.voice_preferences and profile.voice_preferences.topics:
+        topics_lower = [t.lower() for t in topics]
         for pref in profile.voice_preferences.topics:
-            if pref.topic.lower() in [t.lower() for t in topics]:
-                if pref.sentiment == "like":
-                    voice_modifier += pref.intensity * 0.3
-                elif pref.sentiment == "dislike":
-                    voice_modifier -= pref.intensity * 0.4
+            pref_topic_lower = pref.topic.lower()
+            # Check if any item topic matches the preference topic
+            for item_topic in topics_lower:
+                if pref_topic_lower in item_topic or item_topic in pref_topic_lower:
+                    if pref.sentiment == "like":
+                        voice_modifier += pref.intensity * 0.4
+                        logger.debug(f"[SCORE] Boost for liked topic '{pref.topic}' in {topics}")
+                    elif pref.sentiment == "dislike":
+                        voice_modifier -= pref.intensity * 0.5
+                        logger.debug(f"[SCORE] Penalty for disliked topic '{pref.topic}' in {topics}")
+                    break
 
-    # Prominence (simplified)
+    # Prominence (simplified - could be enhanced with position data)
     prominence = 0.5
 
     # Weighted sum
     raw_score = (
         W_TEXT * sim_text +
         W_TOPIC * topic_score +
-        W_VOICE * (0.5 + voice_modifier) +
+        W_VOICE * (0.5 + voice_modifier) +  # 0.5 is neutral, modifier shifts up/down
         W_PROMINENCE * prominence
     )
 
     # Map to 0-100
-    return int(max(0, min(100, raw_score * 100)))
+    final_score = int(max(0, min(100, raw_score * 100)))
+
+    # Log scoring for debugging
+    if profile.voice_onboarding_complete:
+        logger.debug(
+            f"[SCORE] Item topics={topics}, "
+            f"text_sim={sim_text:.2f}, topic_score={topic_score:.2f}, "
+            f"voice_mod={voice_modifier:.2f}, final={final_score}"
+        )
+
+    return final_score
 
 
 def cosine_similarity(a: List[float], b: List[float]) -> float:
@@ -366,30 +419,63 @@ async def explainer_agent(
 ) -> List[ScoredItem]:
     """
     Agent 3: Explainer
-    Generates human-readable explanations for rankings
+    Generates human-readable explanations for rankings.
+    Explains why items were boosted or penalized based on preferences.
     """
     explained_items = []
 
     top_topics = []
+    liked_topics = []
+    disliked_topics = []
+
     if user_profile:
         top_topics = [t[0] for t in user_profile.get_top_topics(3)]
 
+        # Get voice preferences for explanation
+        if user_profile.voice_preferences:
+            for pref in user_profile.voice_preferences.topics:
+                if pref.sentiment == "like":
+                    liked_topics.append(pref.topic.lower())
+                elif pref.sentiment == "dislike":
+                    disliked_topics.append(pref.topic.lower())
+
     for item in scored_items[:5]:  # Top 5 only
-        if user_profile and top_topics:
-            # Personalized explanation
-            matching = [t for t in item["topics"] if t in top_topics]
-            if matching:
-                why = f"Matches your interest in {', '.join(matching)}."
+        if user_profile and (top_topics or user_profile.voice_onboarding_complete):
+            # Check for voice preference matches
+            item_topics_lower = [t.lower() for t in item["topics"]]
+            matched_likes = []
+            matched_dislikes = []
+
+            for topic in item_topics_lower:
+                for liked in liked_topics:
+                    if liked in topic or topic in liked:
+                        matched_likes.append(liked)
+                        break
+                for disliked in disliked_topics:
+                    if disliked in topic or topic in disliked:
+                        matched_dislikes.append(disliked)
+                        break
+
+            # Generate explanation
+            if matched_likes:
+                why = f"Matches your interest in {', '.join(set(matched_likes))}."
+            elif top_topics:
+                matching = [t for t in item["topics"] if t.lower() in [tt.lower() for tt in top_topics]]
+                if matching:
+                    why = f"Matches your interest in {', '.join(matching)}."
+                else:
+                    why = f"Related to {', '.join(item['topics'][:2])}."
             else:
                 why = f"Related to {', '.join(item['topics'][:2])}."
 
-            # Add voice preference context
-            if user_profile.voice_preferences:
-                for pref in user_profile.voice_preferences.topics:
-                    if pref.topic.lower() in [t.lower() for t in item["topics"]]:
-                        if pref.sentiment == "like":
-                            why += f" You mentioned liking {pref.topic}."
-                        break
+            # Add context about dislikes (lower scored items)
+            if matched_dislikes:
+                why += f" (Note: contains topics you're less interested in)"
+
+            # Add voice onboarding context
+            if user_profile.voice_onboarding_complete and not matched_likes and not matched_dislikes:
+                why += " Based on your preferences."
+
         else:
             # Limited mode explanation
             why = f"Prominent content about {', '.join(item['topics'][:2])}."
@@ -420,6 +506,17 @@ async def analyze_page_pipeline(
     user_profile = None
     if user_id:
         user_profile = await get_user_profile(user_id)
+        if user_profile:
+            logger.info(
+                f"[PIPELINE] User {user_id}: "
+                f"voice_onboarding={user_profile.voice_onboarding_complete}, "
+                f"topic_affinities={len(user_profile.topic_affinity)}, "
+                f"voice_prefs={len(user_profile.voice_preferences.topics) if user_profile.voice_preferences else 0}"
+            )
+        else:
+            logger.info(f"[PIPELINE] User {user_id}: No profile found (will use limited mode)")
+    else:
+        logger.info("[PIPELINE] No user_id provided (anonymous mode)")
 
     # Agent 1: Extract and classify items
     extractor_result = await extractor_agent(

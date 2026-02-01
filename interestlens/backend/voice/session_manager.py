@@ -192,9 +192,11 @@ async def save_session_preferences(room_name: str, user_id: str, preferences: Vo
     """
     Save extracted preferences to user profile.
     Also performs comprehensive category extraction at session end.
+    Creates a new profile if one doesn't exist.
     """
     redis = await get_redis()
     if not redis:
+        print(f"[VOICE] Redis not available, cannot save preferences for {user_id}")
         return
 
     from models.profile import UserProfile
@@ -203,10 +205,11 @@ async def save_session_preferences(room_name: str, user_id: str, preferences: Vo
     profile_data = await json_get(profile_key)
 
     if not profile_data:
-        print(f"User profile not found for {user_id}")
-        return
-
-    profile = UserProfile(**profile_data)
+        # Create new profile for this user
+        print(f"[VOICE] Creating new profile for user {user_id}")
+        profile = UserProfile(user_id=user_id)
+    else:
+        profile = UserProfile(**profile_data)
 
     # Get transcription history and perform comprehensive extraction
     session_id = room_name  # room_name is used as session_id
@@ -344,10 +347,25 @@ async def get_session_status(room_name: str) -> dict:
     Returns:
         Dict with session status and preferences
     """
+    import time
+    current_time = time.time()
+
     # Check in-memory first
     async with _session_lock:
         if room_name in _active_sessions:
             session = _active_sessions[room_name]
+            # Check if session is stale
+            last_activity = session.get("last_activity", 0)
+            if current_time - last_activity > SESSION_TIMEOUT:
+                return {
+                    "exists": False,
+                    "status": "expired",
+                    "error": "SESSION_EXPIRED",
+                    "message": "Session has expired. Please start a new session.",
+                    "created_at": session.get("created_at"),
+                    "last_activity": last_activity,
+                    "preferences": session.get("preferences")
+                }
             return {
                 "exists": True,
                 "status": session["status"],
@@ -359,6 +377,18 @@ async def get_session_status(room_name: str) -> dict:
     # Check Redis
     session_data = await json_get(f"voice_session:{room_name}")
     if session_data:
+        # Check if Redis session is stale
+        last_activity = session_data.get("last_activity", 0)
+        if current_time - last_activity > SESSION_TIMEOUT:
+            return {
+                "exists": False,
+                "status": "expired",
+                "error": "SESSION_EXPIRED",
+                "message": "Session has expired. Please start a new session.",
+                "created_at": session_data.get("created_at"),
+                "last_activity": last_activity,
+                "preferences": session_data.get("preferences")
+            }
         return {
             "exists": True,
             "status": session_data.get("status", "unknown"),
@@ -370,6 +400,8 @@ async def get_session_status(room_name: str) -> dict:
     return {
         "exists": False,
         "status": "not_found",
+        "error": "SESSION_NOT_FOUND",
+        "message": "Session not found. It may have been cleaned up or never existed.",
         "created_at": None,
         "last_activity": None,
         "preferences": None

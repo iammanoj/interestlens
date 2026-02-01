@@ -52,43 +52,29 @@ class ConversationState:
 
 
 # Conversation prompts
-OPENING_MESSAGE = (
-    "Hi! I'm here to learn what content interests you. "
-    "Tell me about your interests - what topics do you enjoy reading about or watching?"
-)
+OPENING_MESSAGE = "Hi! What topics interest you?"
 
-CONVERSATION_SYSTEM_PROMPT = """You are a friendly onboarding assistant helping a user set up their content preferences.
+CONVERSATION_SYSTEM_PROMPT = """You are a concise onboarding assistant. Your job: quickly learn user content preferences.
 
-Current conversation phase: {phase}
-Topics detected so far: {topics_summary}
+Phase: {phase}
+Topics so far: {topics_summary}
 
-Your goals:
-1. ACKNOWLEDGE what the user said naturally
-2. ASK follow-up questions to clarify their interests
-3. DETECT when they're done and transition to confirmation
-
-Guidelines:
-- Keep responses SHORT (1-2 sentences max)
-- Be conversational, not robotic
-- After 3-4 topics, start asking "Is there anything else?"
-- If user mentions a broad topic, ask about specific aspects
-- Probe for dislikes: "Any topics you'd like me to filter out?"
-- Listen for intensity words: "love" vs "somewhat interested"
-
-END DETECTION - Transition to confirmation when:
-- User says: "I'm done", "that's all", "stop", "nothing else"
-- User confirms there's nothing more to add
-- After 5+ exchanges if coverage seems good
-
-When transitioning to confirmation, summarize what you learned and ask if it's accurate.
-When user confirms, thank them and end the conversation.
+RULES:
+- MAX 10 words per response
+- Ask ONE simple question at a time
+- No filler words or pleasantries
+- Examples of good responses:
+  - "Got it. Any topics to avoid?"
+  - "What else interests you?"
+  - "Anything you dislike?"
+  - "All set?"
 
 Recent conversation:
 {recent_history}
 
-User just said: "{user_message}"
+User said: "{user_message}"
 
-Respond naturally (1-2 sentences). If transitioning phases, adjust your response accordingly."""
+Respond in 10 words or less."""
 
 
 # End detection keywords
@@ -199,7 +185,7 @@ class OnboardingAgent:
                     # User confirmed, end conversation
                     self.state.phase = "closing"
                     self.state.is_complete = True
-                    response = "Great! Your preferences have been saved. You're all set!"
+                    response = "Done! Preferences saved."
 
                     # Final extraction and callback
                     if self.on_session_complete:
@@ -210,16 +196,17 @@ class OnboardingAgent:
                 else:
                     response = await self._generate_response(message)
             else:
-                # Extract preferences and categories from this message (async, non-blocking)
-                asyncio.create_task(self._extract_and_update(message))
+                # Extract preferences and categories BEFORE generating response
+                # This ensures categories are saved to Redis before the Chrome extension polls
+                await self._extract_and_update(message)
 
                 # Generate conversational response
                 response = await self._generate_response(message)
 
                 # Check if we should suggest wrapping up
-                if self.state.turn_count >= 5 and len(self.state.extracted_preferences.topics) >= 3:
+                if self.state.turn_count >= 4 and len(self.state.extracted_preferences.topics) >= 2:
                     if self.state.phase == "exploring":
-                        response += " Is there anything else you'd like to add, or does that cover your interests?"
+                        response += " All set?"
 
             # Add response to history
             self.state.conversation_history.append({
@@ -359,7 +346,7 @@ class OnboardingAgent:
     async def _generate_confirmation(self) -> str:
         """Generate the confirmation message."""
         summary = preferences_to_summary(self.state.extracted_preferences)
-        return f"Great! Here's what I've learned: {summary} Does that sound right?"
+        return f"Got it: {summary}. Correct?"
 
     def get_current_preferences(self) -> VoicePreferences:
         """Get the current extracted preferences."""

@@ -132,7 +132,14 @@ async def get_voice_session_status(
     room_name: str,
     user: Optional[dict] = Depends(get_optional_user)
 ):
-    """Get the status of a voice session and current preferences"""
+    """
+    Get the status of a voice session and current preferences.
+
+    Returns status with clear error codes for client handling:
+    - SESSION_NOT_FOUND: Session doesn't exist, client should start new session
+    - SESSION_EXPIRED: Session has expired, client should start new session
+    - exists=True: Session is active and can be used
+    """
     status = await get_session_status(room_name)
 
     if not status["exists"]:
@@ -142,6 +149,76 @@ async def get_voice_session_status(
             return text_status
 
     return status
+
+
+@router.get("/validate-session/{room_name}")
+async def validate_session(
+    room_name: str,
+    token: Optional[str] = None,
+    user: Optional[dict] = Depends(get_optional_user)
+):
+    """
+    Validate a session before reconnecting.
+
+    Use this endpoint to check if cached session data is still valid.
+    Returns validation result with action recommendation.
+
+    Args:
+        room_name: The cached room name
+        token: The cached token (optional, for token validation)
+
+    Returns:
+        - valid: True if session can be used
+        - action: "use_cached" | "start_new" | "refresh_token"
+        - error: Error code if invalid
+        - message: Human-readable message
+    """
+    import time
+
+    status = await get_session_status(room_name)
+
+    # Session doesn't exist
+    if not status["exists"]:
+        return {
+            "valid": False,
+            "action": "start_new",
+            "error": status.get("error", "SESSION_NOT_FOUND"),
+            "message": status.get("message", "Session not found. Please start a new session."),
+            "should_clear_cache": True
+        }
+
+    # Session is expired
+    if status.get("status") == "expired":
+        return {
+            "valid": False,
+            "action": "start_new",
+            "error": "SESSION_EXPIRED",
+            "message": "Session has expired. Please start a new session.",
+            "should_clear_cache": True
+        }
+
+    # Session is ended
+    if status.get("status") == "ended":
+        return {
+            "valid": False,
+            "action": "start_new",
+            "error": "SESSION_ENDED",
+            "message": "Session has ended. Please start a new session.",
+            "should_clear_cache": True
+        }
+
+    # Session is active - check token if provided
+    # (In production, would verify token signature/expiry)
+
+    return {
+        "valid": True,
+        "action": "use_cached",
+        "error": None,
+        "message": "Session is valid",
+        "status": status.get("status"),
+        "last_activity": status.get("last_activity"),
+        "should_clear_cache": False
+    }
 
 
 @router.post("/session/{room_name}/end")
@@ -164,18 +241,35 @@ async def voice_session_websocket(websocket: WebSocket, room_name: str):
 
     Connect to receive live preference updates during voice onboarding.
 
+    IMPORTANT: Before connecting, validate the session using /validate-session/{room_name}
+    to ensure the session is still active. Stale sessions will receive an error message
+    and the connection will be closed.
+
     Messages sent:
     - {"type": "connected", "room_name": "...", "message": "..."}
     - {"type": "preference_update", "preferences": {...}, "topics_count": N}
     - {"type": "session_complete", "preferences": {...}}
     - {"type": "status_update", ...}
-    - {"type": "error", "error": "..."}
+    - {"type": "error", "error": "...", "code": "SESSION_NOT_FOUND|SESSION_EXPIRED"}
     - {"type": "heartbeat"}
 
     Messages you can send:
     - {"type": "ping"} -> responds with {"type": "pong"}
     - {"type": "get_status"} -> responds with current status
     """
+    # Validate session before accepting WebSocket
+    status = await get_session_status(room_name)
+    if not status["exists"]:
+        await websocket.accept()
+        await websocket.send_json({
+            "type": "error",
+            "error": status.get("message", "Session not found"),
+            "code": status.get("error", "SESSION_NOT_FOUND"),
+            "action": "start_new"
+        })
+        await websocket.close(code=1000, reason="Session not found")
+        return
+
     await websocket_endpoint(websocket, room_name)
 
 
@@ -448,4 +542,42 @@ async def get_transcriptions(
         "final_extraction_complete": transcription_data.get("final_extraction_complete", False),
         "created_at": transcription_data.get("created_at"),
         "updated_at": transcription_data.get("updated_at")
+    }
+
+
+@router.get("/debug/user-profile")
+async def debug_user_profile(user: Optional[dict] = Depends(get_optional_user)):
+    """
+    Debug endpoint to check if user profile and preferences are loaded correctly.
+    Use this to verify that voice onboarding data is being applied.
+    """
+    from services.profile import get_user_profile
+
+    user_id = get_user_id(user, "anonymous")
+
+    profile = await get_user_profile(user_id)
+
+    if not profile:
+        return {
+            "user_id": user_id,
+            "authenticated": user is not None,
+            "profile_exists": False,
+            "message": "No profile found. Voice onboarding may not have been completed for this user."
+        }
+
+    return {
+        "user_id": user_id,
+        "authenticated": user is not None,
+        "profile_exists": True,
+        "voice_onboarding_complete": profile.voice_onboarding_complete,
+        "topic_affinity_count": len(profile.topic_affinity),
+        "topic_affinities": dict(list(profile.topic_affinity.items())[:10]),  # Top 10
+        "voice_preferences": {
+            "topics": [
+                {"topic": t.topic, "sentiment": t.sentiment, "intensity": t.intensity}
+                for t in (profile.voice_preferences.topics if profile.voice_preferences else [])
+            ],
+            "confidence": profile.voice_preferences.confidence if profile.voice_preferences else 0
+        } if profile.voice_preferences else None,
+        "interaction_count": profile.interaction_count
     }
