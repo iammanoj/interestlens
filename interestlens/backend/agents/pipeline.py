@@ -445,9 +445,13 @@ async def analyze_page_pipeline(
             top_topics=user_profile.get_top_topics(5)
         )
 
+    # page_type is a string, but page_topics expects a list
+    page_type = extractor_result.get("page_type", "other")
+    page_topics = [page_type] if isinstance(page_type, str) else page_type
+
     return AnalyzePageResponse(
         items=explained_items,
-        page_topics=extractor_result.get("page_type", "other"),
+        page_topics=page_topics,
         profile_summary=profile_summary,
         weave_trace_url=weave.get_current_trace_url() if hasattr(weave, 'get_current_trace_url') else None
     )
