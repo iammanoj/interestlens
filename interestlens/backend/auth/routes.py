@@ -138,3 +138,36 @@ async def get_current_user_info(request: Request):
 async def logout():
     """Logout - client should clear stored token"""
     return {"status": "ok", "message": "Logged out"}
+
+
+@router.post("/dev-token")
+async def create_dev_token(user_id: str = "dev_user_123", name: str = "Dev User"):
+    """
+    DEV ONLY: Create a test JWT token without OAuth.
+    Remove this endpoint in production!
+    """
+    import os
+    if os.getenv("ENV", "development") == "production":
+        raise HTTPException(status_code=404, detail="Not found")
+
+    # Create or update user profile
+    redis = await get_redis()
+    profile_key = f"user:{user_id}"
+    existing = await redis.json().get(profile_key)
+
+    if not existing:
+        profile = UserProfile(
+            user_id=user_id,
+            email=f"{user_id}@dev.local",
+            name=name
+        )
+        await redis.json().set(profile_key, "$", profile.model_dump())
+
+    # Create JWT
+    access_token = create_access_token({
+        "sub": user_id,
+        "email": f"{user_id}@dev.local",
+        "name": name
+    })
+
+    return {"access_token": access_token, "user_id": user_id}
