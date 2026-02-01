@@ -19,6 +19,7 @@ load_dotenv()
 # Import routers
 from auth.routes import router as auth_router
 from voice.routes import router as voice_router
+from activity.routes import router as activity_router
 from agents.pipeline import analyze_page_pipeline
 from services.redis_client import get_redis, init_redis
 from models.requests import AnalyzePageRequest, EventRequest
@@ -103,6 +104,7 @@ app.add_middleware(
 # Include routers
 app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
 app.include_router(voice_router, prefix="/voice", tags=["Voice Onboarding"])
+app.include_router(activity_router, prefix="/activity", tags=["Activity Tracking"])
 
 
 @app.get("/")

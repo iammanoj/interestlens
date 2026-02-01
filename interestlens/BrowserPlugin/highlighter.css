@@ -1,0 +1,260 @@
+/* ============================================
+   InterestLens Content Highlighter Styles
+   ============================================ */
+
+/* Subtle highlight for matching content */
+.il-highlight {
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.il-highlight::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -4px;
+  right: -4px;
+  bottom: -2px;
+  border-radius: 6px;
+  pointer-events: none;
+  z-index: -1;
+  transition: all 0.3s ease;
+}
+
+/* High interest match (80%+) */
+.il-highlight-high::before {
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+}
+
+.il-highlight-high:hover::before {
+  background: rgba(99, 102, 241, 0.12);
+  border-color: rgba(99, 102, 241, 0.35);
+}
+
+/* Medium interest match (50-79%) */
+.il-highlight-medium::before {
+  background: rgba(34, 197, 94, 0.06);
+  border: 1px solid rgba(34, 197, 94, 0.15);
+}
+
+.il-highlight-medium:hover::before {
+  background: rgba(34, 197, 94, 0.1);
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+/* Low interest/avoid content */
+.il-highlight-low {
+  opacity: 0.6;
+}
+
+.il-highlight-low:hover {
+  opacity: 1;
+}
+
+/* Interest badge */
+.il-interest-badge {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 10px;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(99, 102, 241, 0.3);
+  z-index: 100;
+  pointer-events: none;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.il-interest-badge.green {
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  box-shadow: 0 2px 6px rgba(34, 197, 94, 0.3);
+}
+
+/* Category tag tooltip */
+.il-category-tooltip {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #0f172a;
+  color: white;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.2s ease;
+  z-index: 1000;
+  pointer-events: none;
+  margin-bottom: 8px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.il-category-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: #0f172a;
+}
+
+.il-highlight:hover .il-category-tooltip {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Dark mode adjustments */
+@media (prefers-color-scheme: dark) {
+  .il-highlight-high::before {
+    background: rgba(129, 140, 248, 0.1);
+    border-color: rgba(129, 140, 248, 0.25);
+  }
+
+  .il-highlight-high:hover::before {
+    background: rgba(129, 140, 248, 0.15);
+    border-color: rgba(129, 140, 248, 0.4);
+  }
+
+  .il-highlight-medium::before {
+    background: rgba(74, 222, 128, 0.08);
+    border-color: rgba(74, 222, 128, 0.2);
+  }
+
+  .il-highlight-medium:hover::before {
+    background: rgba(74, 222, 128, 0.12);
+    border-color: rgba(74, 222, 128, 0.35);
+  }
+
+  .il-category-tooltip {
+    background: #f8fafc;
+    color: #0f172a;
+  }
+
+  .il-category-tooltip::after {
+    border-top-color: #f8fafc;
+  }
+}
+
+/* Animation for new highlights */
+@keyframes il-highlight-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.il-highlight-animated {
+  animation: il-highlight-in 0.3s ease-out;
+}
+
+/* Sidebar interest indicator */
+.il-sidebar-interest-marker {
+  width: 4px;
+  height: 100%;
+  position: absolute;
+  left: 0;
+  top: 0;
+  border-radius: 4px 0 0 4px;
+}
+
+.il-sidebar-interest-marker.high {
+  background: linear-gradient(180deg, #6366f1 0%, #a855f7 100%);
+}
+
+.il-sidebar-interest-marker.medium {
+  background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%);
+}
+
+/* Content card with interest indicator */
+.il-card.il-has-interest {
+  position: relative;
+  overflow: visible;
+}
+
+.il-card.il-has-interest::before {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #6366f1 0%, #a855f7 100%);
+}
+
+/* Disliked content marker */
+.il-disliked::before {
+  background: #f87171 !important;
+}
+
+.il-disliked {
+  opacity: 0.5;
+}
+
+/* Highlight controls overlay */
+.il-highlight-controls {
+  position: fixed;
+  bottom: 24px;
+  left: 24px;
+  background: white;
+  border-radius: 12px;
+  padding: 12px 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 2147483640;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .il-highlight-controls {
+    background: #1e293b;
+    color: #f8fafc;
+  }
+}
+
+.il-highlight-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.il-highlight-toggle input {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.il-highlight-stats {
+  color: #64748b;
+  padding-left: 12px;
+  border-left: 1px solid #e2e8f0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .il-highlight-stats {
+    border-color: #334155;
+  }
+}
+
+/* Hide highlights when disabled */
+body.il-highlights-disabled .il-highlight::before,
+body.il-highlights-disabled .il-interest-badge,
+body.il-highlights-disabled .il-category-tooltip {
+  display: none !important;
+}

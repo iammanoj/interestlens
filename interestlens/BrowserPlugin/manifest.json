@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "InterestLens",
+  "version": "2.1.0",
+  "description": "AI-powered content personalization. Tracks your interests via voice onboarding and highlights relevant content as you browse.",
+  "permissions": [
+    "scripting",
+    "tabs",
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "<all_urls>",
+    "http://localhost:8000/*",
+    "http://localhost:8001/*",
+    "https://api.daily.co/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js", "sidebar.js", "authLens.js", "welcome.js", "tracker.js", "highlighter.js"],
+      "css": ["sidebar.css", "authLens.css", "welcome.css", "highlighter.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "commands": {
+    "toggle-sidebar": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+S",
+        "mac": "Command+Shift+S"
+      },
+      "description": "Toggle InterestLens sidebar"
+    }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["sidebar.css", "welcome.css", "highlighter.css"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
