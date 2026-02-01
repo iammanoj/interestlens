@@ -197,13 +197,21 @@ async def get_embedding(text: str, item_id: str) -> List[float]:
 @weave.op()
 async def classify_topics(text: str) -> List[str]:
     """Classify text into topic categories"""
-    prompt = f"""Classify this text into 1-3 topic categories.
+    prompt = f"""Classify this text into 1-3 topic categories. Choose the MOST SPECIFIC and RELEVANT categories.
 
 Text: {text[:500]}
 
 Available categories: {', '.join(TOPIC_CATEGORIES)}
 
-Return only the category names as a JSON array, e.g., ["AI/ML", "startups"]"""
+Guidelines:
+- Government, elections, legislation, politicians → "politics"
+- International affairs, global events → "world news"
+- Economic policy, trade, GDP → "economics"
+- Courts, regulations, legal cases → "law"
+- Schools, universities, learning → "education"
+- Only use "business strategy" for corporate/business topics, NOT government policy
+
+Return only the category names as a JSON array, e.g., ["politics", "economics"]"""
 
     try:
         response = await asyncio.wait_for(
