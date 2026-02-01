@@ -76,6 +76,10 @@ async def track_activity(
     for activity in data.activities:
         activity_dict = activity.model_dump()
 
+        # Use client_timestamp if activity timestamp is missing
+        if activity_dict.get("timestamp", 0) == 0:
+            activity_dict["timestamp"] = data.client_timestamp
+
         # Add to list (with size limit)
         activities_list.append(activity_dict)
         if len(activities_list) > MAX_ACTIVITIES_PER_USER:

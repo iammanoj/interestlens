@@ -30,7 +30,7 @@ class PageVisitData(BaseModel):
 class Activity(BaseModel):
     """A single activity event."""
     type: str  # 'page_visit', 'click'
-    timestamp: int
+    timestamp: int = 0  # Default to 0 if not provided, will use client_timestamp
     data: Dict[str, Any]
     sourceUrl: str = ""
     sourceDomain: str = ""
