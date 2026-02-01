@@ -27,7 +27,8 @@ class CrossReferenceResult(BaseModel):
     excerpt: str
     full_text: Optional[str] = None
     publication_date: Optional[str] = None
-    relevance_score: float = 0.0  # How relevant to original article
+    relevance_score: float = 0.0  # Credibility score (0-1) based on source
+    source_type: str = "unknown"  # "fact_checker", "news_wire", "news_outlet", "unknown"
 
 
 class FactClaim(BaseModel):

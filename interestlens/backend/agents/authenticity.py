@@ -295,11 +295,27 @@ async def authenticity_agent(
     )
 
     try:
-        # Step 1: Use provided text (Browserbase extraction disabled for now)
+        # Step 1: Get article content - fetch from URL if text is minimal
         print(f"[DEBUG] Starting authenticity check for: {url}")
-        article_text = text
-        article_title = text[:100] if text else ""
-        print(f"[DEBUG] Using provided text, length: {len(article_text)}")
+
+        # If text is too short, try to fetch from URL
+        if not text or len(text.strip()) < 100:
+            print(f"[DEBUG] Text too short ({len(text) if text else 0} chars), fetching from URL...")
+            from services.browserbase import extract_article_content
+            article = await extract_article_content(url)
+            if article and article.full_text:
+                article_text = article.full_text
+                article_title = article.title or article_text[:100]
+                print(f"[DEBUG] Fetched article: {len(article_text)} chars, title: {article_title[:50]}...")
+            else:
+                print(f"[DEBUG] Failed to fetch article content from URL")
+                article_text = text or ""
+                article_title = text[:100] if text else ""
+        else:
+            article_text = text
+            article_title = text[:100] if text else ""
+
+        print(f"[DEBUG] Using text, length: {len(article_text)}")
 
         # Step 2: Extract claims
         print(f"[DEBUG] Calling extract_claims...")
@@ -324,7 +340,7 @@ async def authenticity_agent(
                 checked_at=datetime.utcnow(),
                 processing_time_ms=int((time.time() - start_time) * 1000)
             )
-            await cache_authenticity_result(item_id, result.model_dump())
+            await cache_authenticity_result(item_id, result.model_dump(mode='json'))
             return result
 
         # Step 3: Search for cross-references
@@ -374,7 +390,7 @@ async def authenticity_agent(
         )
 
         # Cache result
-        await cache_authenticity_result(item_id, result.model_dump())
+        await cache_authenticity_result(item_id, result.model_dump(mode='json'))
 
         # Log trace for observability
         trace_authenticity_check(
