@@ -45,12 +45,17 @@ window.addEventListener('storage', (event) => {
 });
 
 // Initialize on page load
+console.log('InterestLens: Content script loaded on', window.location.href);
 initialize();
 
 async function initialize() {
+  console.log('InterestLens: Initializing, readyState:', document.readyState);
   // Wait for page to be ready
   if (document.readyState !== 'complete') {
-    window.addEventListener('load', () => extractAndAnalyze());
+    window.addEventListener('load', () => {
+      console.log('InterestLens: Page load event fired');
+      extractAndAnalyze();
+    });
   } else {
     extractAndAnalyze();
   }
@@ -129,19 +134,27 @@ function extractPageItems(): PageItem[] {
   ];
 
   const elements = document.querySelectorAll(selectors.join(', '));
+  console.log(`InterestLens: Found ${elements.length} raw elements matching selectors`);
+
+  let skipSmall = 0, skipFar = 0, skipShort = 0, skipDupe = 0;
 
   elements.forEach((el, index) => {
     const element = el as HTMLElement;
 
-    // Skip if too small or hidden
+    // Skip if too small or hidden (but be lenient for links with text)
     const rect = element.getBoundingClientRect();
-    if (rect.width < 50 || rect.height < 20) return;
-    if (rect.top > window.innerHeight * 3) return; // Skip items too far below
+    // For anchor tags, only skip if truly invisible (0 size)
+    // For other elements, use slightly more lenient thresholds
+    const isLink = element.tagName === 'A';
+    const minWidth = isLink ? 10 : 30;
+    const minHeight = isLink ? 10 : 15;
+    if (rect.width < minWidth || rect.height < minHeight) { skipSmall++; return; }
+    if (rect.top > window.innerHeight * 3) { skipFar++; return; }
 
     // Get text content
     const text = element.textContent?.trim().slice(0, 200) || '';
-    if (text.length < 10) return;
-    if (seenTexts.has(text)) return;
+    if (text.length < 10) { skipShort++; return; }
+    if (seenTexts.has(text)) { skipDupe++; return; }
     seenTexts.add(text);
 
     // Get link href
@@ -163,6 +176,7 @@ function extractPageItems(): PageItem[] {
     });
   });
 
+  console.log(`InterestLens: Filtering stats - tooSmall:${skipSmall}, tooFar:${skipFar}, tooShort:${skipShort}, duplicate:${skipDupe}, kept:${items.length}`);
   return items.slice(0, 50); // Limit to 50 items
 }
 

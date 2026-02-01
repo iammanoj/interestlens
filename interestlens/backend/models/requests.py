@@ -15,7 +15,7 @@ class PageItem(BaseModel):
     href: Optional[str] = None
     text: str
     snippet: str = ""
-    bbox: List[int] = []  # [x, y, width, height]
+    bbox: List[float] = []  # [x, y, width, height] - floats from getBoundingClientRect
     thumbnail_base64: Optional[str] = None
 
 

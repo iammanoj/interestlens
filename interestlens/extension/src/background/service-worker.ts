@@ -43,13 +43,17 @@ async function handleMessage(
   _sender: chrome.runtime.MessageSender,
   sendResponse: (response: any) => void
 ) {
+  console.log('[ServiceWorker] Received message:', message.type);
+
   switch (message.type) {
     case 'ANALYZE_PAGE':
+      console.log('[ServiceWorker] ANALYZE_PAGE received, items:', (message.payload as any)?.items?.length);
       try {
         const result = await analyzePageAPI(
           message.payload as AnalyzeRequest,
           authState.token
         );
+        console.log('[ServiceWorker] API call successful');
         sendResponse({ success: true, data: result });
 
         // Also broadcast to sidepanel and other listeners
