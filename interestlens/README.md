@@ -20,7 +20,8 @@ AI-powered Chrome extension that personalizes any webpage by highlighting the co
 |-----------|------------|
 | Extension | Chrome MV3, React 18, TypeScript 5, Vite, CRXJS |
 | Backend | FastAPI, Python 3.11+, Uvicorn |
-| AI Agents | Google Gemini 2.0 Flash (Extractor, Scorer, Explainer) |
+| AI Models | Google Gemini 2.0 Flash via `google.generativeai` SDK |
+| AI Agents | Custom async pipeline (Python asyncio) - no frameworks |
 | Vector DB | Redis Stack (Vector Search + JSON) |
 | Observability | W&B Weave |
 | URL Preview | Browserbase + Stagehand |
@@ -405,6 +406,8 @@ Full interactive API documentation: `http://localhost:8001/docs`
 
 ### AI Pipeline Flow
 
+The pipeline uses direct Gemini API calls with custom async orchestration (`asyncio.gather()` for parallel execution). No agent frameworks (LangChain, Google ADK, etc.) are used.
+
 1. **Extractor Agent** - Identifies content items on the page with topics
 2. **Scorer Agent** - Calculates interest scores (0-100) using user profile
 3. **Explainer Agent** - Generates human-readable "why" explanations
@@ -424,8 +427,8 @@ interestlens/
 │   │   ├── routes.py         # Auth endpoints
 │   │   ├── jwt.py            # Token generation/validation
 │   │   └── dependencies.py   # Auth middleware
-│   ├── agents/               # AI Agent Pipeline
-│   │   └── pipeline.py       # 3-agent orchestration
+│   ├── agents/               # AI Pipeline (Custom Orchestration)
+│   │   └── pipeline.py       # Parallel Gemini calls via asyncio
 │   ├── voice/                # Voice Onboarding
 │   │   ├── routes.py         # Voice API endpoints
 │   │   ├── bot.py            # Conversational agent logic
