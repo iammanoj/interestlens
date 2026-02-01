@@ -40,6 +40,13 @@ from services.weave_utils import (
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 fast_model = genai.GenerativeModel("gemini-2.0-flash-lite")
 
+# API timeout in seconds
+GEMINI_TIMEOUT = 30.0
+
+# Logger
+import logging
+logger = logging.getLogger(__name__)
+
 # Prompts
 CLAIM_EXTRACTION_PROMPT = """You are a fact-checking assistant analyzing a news article.
 
@@ -127,15 +134,18 @@ async def extract_claims(title: str, text: str) -> tuple[str, str, List[FactClai
         text=truncated_text
     )
 
-    print(f"[DEBUG] Extracting claims from: {title[:50]}...")
+    logger.debug(f"Extracting claims from: {title[:50]}...")
     gemini_start = time.time()
 
     try:
-        response = await fast_model.generate_content_async(prompt)
+        response = await asyncio.wait_for(
+            fast_model.generate_content_async(prompt),
+            timeout=GEMINI_TIMEOUT
+        )
         response_text = response.text.strip()
         gemini_latency = int((time.time() - gemini_start) * 1000)
         trace_gemini_call("extract_claims", "gemini-2.0-flash-lite", latency_ms=gemini_latency)
-        print(f"[DEBUG] Gemini response: {response_text[:200]}...")
+        logger.debug(f"Gemini response: {response_text[:200]}...")
 
         # Clean up response (remove markdown code blocks if present)
         if response_text.startswith("```"):
@@ -153,17 +163,18 @@ async def extract_claims(title: str, text: str) -> tuple[str, str, List[FactClai
                 source_in_article=claim_data.get("source_in_article")
             ))
 
-        print(f"[DEBUG] Extracted {len(claims)} claims")
+        logger.debug(f"Extracted {len(claims)} claims")
         return (
             result.get("article_type", "news"),
             result.get("main_topic", ""),
             claims
         )
 
+    except asyncio.TimeoutError:
+        logger.error(f"Gemini API timeout after {GEMINI_TIMEOUT}s in extract_claims")
+        return ("unknown", "", [])
     except Exception as e:
-        print(f"[ERROR] Error extracting claims: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Error extracting claims: {e}", exc_info=True)
         return ("unknown", "", [])
 
 
@@ -219,7 +230,10 @@ async def verify_claims(
     )
 
     try:
-        response = await fast_model.generate_content_async(prompt)
+        response = await asyncio.wait_for(
+            fast_model.generate_content_async(prompt),
+            timeout=GEMINI_TIMEOUT
+        )
         response_text = response.text.strip()
 
         # Clean up response
@@ -247,8 +261,11 @@ async def verify_claims(
             result.get("explanation", "")
         )
 
+    except asyncio.TimeoutError:
+        logger.error(f"Gemini API timeout after {GEMINI_TIMEOUT}s in verify_claims")
+        return (50, "unverified", 0.3, [], "Verification timeout")
     except Exception as e:
-        print(f"Error verifying claims: {e}")
+        logger.error(f"Error verifying claims: {e}")
         return (50, "unverified", 0.3, [], f"Verification error: {str(e)}")
 
 
@@ -296,34 +313,34 @@ async def authenticity_agent(
 
     try:
         # Step 1: Get article content - fetch from URL if text is minimal
-        print(f"[DEBUG] Starting authenticity check for: {url}")
+        logger.debug(f"Starting authenticity check for: {url}")
 
         # If text is too short, try to fetch from URL
         if not text or len(text.strip()) < 100:
-            print(f"[DEBUG] Text too short ({len(text) if text else 0} chars), fetching from URL...")
+            logger.debug(f"Text too short ({len(text) if text else 0} chars), fetching from URL...")
             from services.browserbase import extract_article_content
             article = await extract_article_content(url)
             if article and article.full_text:
                 article_text = article.full_text
                 article_title = article.title or article_text[:100]
-                print(f"[DEBUG] Fetched article: {len(article_text)} chars, title: {article_title[:50]}...")
+                logger.debug(f"Fetched article: {len(article_text)} chars, title: {article_title[:50]}...")
             else:
-                print(f"[DEBUG] Failed to fetch article content from URL")
+                logger.debug("Failed to fetch article content from URL")
                 article_text = text or ""
                 article_title = text[:100] if text else ""
         else:
             article_text = text
             article_title = text[:100] if text else ""
 
-        print(f"[DEBUG] Using text, length: {len(article_text)}")
+        logger.debug(f"Using text, length: {len(article_text)}")
 
         # Step 2: Extract claims
-        print(f"[DEBUG] Calling extract_claims...")
+        logger.debug("Calling extract_claims...")
         article_type, main_topic, claims = await extract_claims(
             title=article_title or text[:100],
             text=article_text
         )
-        print(f"[DEBUG] Claims extracted: {len(claims)}, type: {article_type}, topic: {main_topic}")
+        logger.debug(f"Claims extracted: {len(claims)}, type: {article_type}, topic: {main_topic}")
 
         if not claims:
             result = AuthenticityResult(
@@ -350,15 +367,15 @@ async def authenticity_agent(
         parsed_url = urlparse(url)
         exclude_domain = parsed_url.netloc.replace("www.", "") if url else ""
 
-        print(f"[DEBUG] Searching for cross-references on topic: {search_topic}")
-        print(f"[DEBUG] Excluding domain: {exclude_domain}")
+        logger.debug(f"Searching for cross-references on topic: {search_topic}")
+        logger.debug(f"Excluding domain: {exclude_domain}")
 
         cross_refs = await search_news_sources(
             topic=search_topic,
             exclude_domain=exclude_domain,
             max_results=5 if check_depth == "standard" else 3
         )
-        print(f"[DEBUG] Found {len(cross_refs)} cross-reference sources")
+        logger.debug(f"Found {len(cross_refs)} cross-reference sources")
 
         # Step 4: Fetch cross-reference content (for thorough checks)
         if check_depth == "thorough" and cross_refs:
@@ -406,7 +423,7 @@ async def authenticity_agent(
         return result
 
     except Exception as e:
-        print(f"Authenticity agent error: {e}")
+        logger.error(f"Authenticity agent error: {e}", exc_info=True)
         default_result.explanation = f"Error during authenticity check: {str(e)}"
         default_result.processing_time_ms = int((time.time() - start_time) * 1000)
         return default_result

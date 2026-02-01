@@ -22,6 +22,9 @@ from voice.extraction import (
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 conversation_model = genai.GenerativeModel("gemini-2.0-flash")
 
+# Limit conversation history to prevent unbounded memory growth
+MAX_CONVERSATION_HISTORY = 20  # Keep last 20 messages (10 exchanges)
+
 
 @dataclass
 class ConversationState:
@@ -156,11 +159,14 @@ class OnboardingAgent:
             self.state.last_activity_time = time.time()
             self.state.turn_count += 1
 
-            # Add user message to history
+            # Add user message to history (with limit to prevent memory growth)
             self.state.conversation_history.append({
                 "role": "user",
                 "content": message
             })
+            # Trim history if it exceeds limit
+            if len(self.state.conversation_history) > MAX_CONVERSATION_HISTORY:
+                self.state.conversation_history = self.state.conversation_history[-MAX_CONVERSATION_HISTORY:]
 
             # Notify transcription callback (user speech)
             await self._notify_transcription(message, "user")

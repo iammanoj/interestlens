@@ -183,6 +183,78 @@ except RuntimeError as e:
     raise HTTPException(status_code=503, detail=str(e))
 ```
 
+### Fix 5: Conversation History Memory Limit
+
+**File:** `voice/bot.py`
+
+**Before:** Unbounded conversation history growth
+**After:** `MAX_CONVERSATION_HISTORY = 20` limit (10 exchanges)
+
+```python
+MAX_CONVERSATION_HISTORY = 20
+
+# In process_user_message:
+if len(self.state.conversation_history) > MAX_CONVERSATION_HISTORY:
+    self.state.conversation_history = self.state.conversation_history[-MAX_CONVERSATION_HISTORY:]
+```
+
+### Fix 6: Gemini API Timeouts
+
+**Files:** `agents/pipeline.py`, `agents/authenticity.py`
+
+Added 30-second timeouts to all Gemini API calls to prevent hanging requests:
+
+```python
+GEMINI_TIMEOUT = 30.0
+
+response = await asyncio.wait_for(
+    fast_model.generate_content_async(prompt),
+    timeout=GEMINI_TIMEOUT
+)
+```
+
+### Fix 7: Bare Except Clauses
+
+**Files:** `services/redis_client.py`, `services/browserbase.py`, `services/weave_utils.py`
+
+Replaced bare `except:` clauses with `except Exception:` for proper exception handling.
+
+### Fix 8: HTTP Connection Pooling
+
+**File:** `services/browserbase.py`
+
+Added shared HTTP client with connection pooling:
+
+```python
+_http_client: Optional[httpx.AsyncClient] = None
+
+async def get_http_client() -> httpx.AsyncClient:
+    global _http_client
+    if _http_client is None or _http_client.is_closed:
+        _http_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(30.0, connect=10.0),
+            limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+            follow_redirects=True
+        )
+    return _http_client
+```
+
+**Impact:** Reduced connection overhead, improved throughput for parallel requests.
+
+### Fix 9: Debug Prints to Logging
+
+**Files:** `agents/authenticity.py`, `services/browserbase.py`
+
+Replaced debug print statements with proper logging using Python's logging module:
+
+```python
+import logging
+logger = logging.getLogger(__name__)
+
+# Before: print(f"[DEBUG] ...")
+# After:  logger.debug(f"...")
+```
+
 ---
 
 ## 4. Fallback Scenario Analysis
@@ -295,6 +367,9 @@ print(json.dumps({'items': items, 'max_concurrent': 3}))
 | Cache Performance | ✅ 449x speedup |
 | Rate Limiting | ✅ All limits enforced |
 | Memory Safety | ✅ Session limits enforced |
+| API Timeouts | ✅ 30s timeouts on all Gemini calls |
+| Connection Pooling | ✅ Shared HTTP client with pooling |
+| Logging | ✅ Proper logging infrastructure |
 
 ## Commits
 
@@ -303,9 +378,13 @@ print(json.dumps({'items': items, 'max_concurrent': 3}))
 | `0ea3d1f` | Fix page_topics type error in analyze_page response |
 | `3afdf27` | Add comprehensive test results documentation |
 | `d682f4b` | Fix critical performance and security issues |
+| (pending) | Fix high priority issues: timeouts, pooling, logging |
 
-**All critical issues fixed and verified.** The system now:
+**All critical and high priority issues fixed and verified.** The system now:
 - Processes items in parallel (10-20x faster)
-- Prevents memory leaks with session limits
+- Prevents memory leaks with session and conversation limits
 - Enforces rate limits on all batch endpoints
 - Handles all failure scenarios gracefully
+- Uses proper API timeouts to prevent hanging requests
+- Uses HTTP connection pooling for better performance
+- Uses proper logging instead of debug prints

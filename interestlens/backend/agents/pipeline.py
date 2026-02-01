@@ -31,6 +31,9 @@ vision_model = genai.GenerativeModel("gemini-2.0-flash")
 fast_model = genai.GenerativeModel("gemini-2.0-flash")
 embedding_model = "models/text-embedding-004"
 
+# API timeout in seconds
+GEMINI_TIMEOUT = 30.0
+
 # Topic categories
 TOPIC_CATEGORIES = [
     "AI/ML", "programming", "cloud/infrastructure", "cybersecurity",
@@ -136,12 +139,21 @@ Return JSON:
 
     try:
         if screenshot_base64:
-            response = await vision_model.generate_content_async([
-                {"mime_type": "image/jpeg", "data": screenshot_base64},
-                prompt
-            ])
+            response = await asyncio.wait_for(
+                vision_model.generate_content_async([
+                    {"mime_type": "image/jpeg", "data": screenshot_base64},
+                    prompt
+                ]),
+                timeout=GEMINI_TIMEOUT
+            )
         else:
-            response = await fast_model.generate_content_async(prompt)
+            response = await asyncio.wait_for(
+                fast_model.generate_content_async(prompt),
+                timeout=GEMINI_TIMEOUT
+            )
+    except asyncio.TimeoutError:
+        logger.error(f"[EXTRACTOR] Gemini API timeout after {GEMINI_TIMEOUT}s")
+        response = None
     except Exception as e:
         logger.error(f"[EXTRACTOR] Gemini API error: {type(e).__name__}: {e}")
         response = None
@@ -193,7 +205,13 @@ Available categories: {', '.join(TOPIC_CATEGORIES)}
 Return only the category names as a JSON array, e.g., ["AI/ML", "startups"]"""
 
     try:
-        response = await fast_model.generate_content_async(prompt)
+        response = await asyncio.wait_for(
+            fast_model.generate_content_async(prompt),
+            timeout=GEMINI_TIMEOUT
+        )
+    except asyncio.TimeoutError:
+        logger.error(f"[CLASSIFY_TOPICS] Gemini API timeout after {GEMINI_TIMEOUT}s")
+        return ["other"]
     except Exception as e:
         logger.error(f"[CLASSIFY_TOPICS] Gemini API error: {type(e).__name__}: {e}")
         return ["other"]

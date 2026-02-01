@@ -206,7 +206,7 @@ async def get_cached_authenticity(item_id: str) -> Optional[dict]:
         if data:
             return json.loads(data)
         return None
-    except:
+    except Exception:
         return None
 
 

@@ -6,6 +6,7 @@ Uses Browserbase API for headless browser automation.
 import os
 import asyncio
 import json
+import logging
 from typing import List, Optional
 from urllib.parse import urlparse
 import weave
@@ -14,6 +15,33 @@ import httpx
 from models.authenticity import ArticleContent, CrossReferenceResult
 from services.weave_utils import trace_news_search, log_metric
 from services.redis_client import get_cached_article_content, cache_article_content
+
+# Logger
+logger = logging.getLogger(__name__)
+
+# HTTP connection pool for reuse across requests
+_http_client: Optional[httpx.AsyncClient] = None
+
+
+async def get_http_client() -> httpx.AsyncClient:
+    """Get or create the shared HTTP client with connection pooling."""
+    global _http_client
+    if _http_client is None or _http_client.is_closed:
+        _http_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(30.0, connect=10.0),
+            limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+            follow_redirects=True
+        )
+    return _http_client
+
+
+async def close_http_client():
+    """Close the shared HTTP client (call on shutdown)."""
+    global _http_client
+    if _http_client is not None and not _http_client.is_closed:
+        await _http_client.aclose()
+        _http_client = None
+
 
 BROWSERBASE_API_URL = "https://www.browserbase.com/v1"
 BROWSERBASE_API_KEY = os.getenv("BROWSERBASE_API_KEY")
@@ -62,46 +90,46 @@ class BrowserbaseError(Exception):
 @weave.op()
 async def create_browser_session() -> str:
     """Create a new Browserbase browser session"""
-    async with httpx.AsyncClient(timeout=EXTRACTION_TIMEOUT) as client:
-        response = await client.post(
-            f"{BROWSERBASE_API_URL}/sessions",
-            headers={
-                "X-BB-API-Key": BROWSERBASE_API_KEY,
-                "Content-Type": "application/json"
-            },
-            json={
-                "projectId": BROWSERBASE_PROJECT_ID,
-                "browserSettings": {
-                    "blockAds": True,
-                    "solveCaptchas": False
-                }
+    client = await get_http_client()
+    response = await client.post(
+        f"{BROWSERBASE_API_URL}/sessions",
+        headers={
+            "X-BB-API-Key": BROWSERBASE_API_KEY,
+            "Content-Type": "application/json"
+        },
+        json={
+            "projectId": BROWSERBASE_PROJECT_ID,
+            "browserSettings": {
+                "blockAds": True,
+                "solveCaptchas": False
             }
-        )
+        }
+    )
 
-        if response.status_code != 200 and response.status_code != 201:
-            raise BrowserbaseError(f"Failed to create session: {response.text}")
+    if response.status_code != 200 and response.status_code != 201:
+        raise BrowserbaseError(f"Failed to create session: {response.text}")
 
-        data = response.json()
-        return data["id"]
+    data = response.json()
+    return data["id"]
 
 
 async def close_browser_session(session_id: str) -> None:
     """Close a Browserbase session"""
     try:
-        async with httpx.AsyncClient(timeout=EXTRACTION_TIMEOUT) as client:
-            await client.post(
-                f"{BROWSERBASE_API_URL}/sessions/{session_id}",
-                headers={
-                    "X-BB-API-Key": BROWSERBASE_API_KEY,
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "status": "REQUEST_RELEASE",
-                    "projectId": BROWSERBASE_PROJECT_ID
-                }
-            )
+        client = await get_http_client()
+        await client.post(
+            f"{BROWSERBASE_API_URL}/sessions/{session_id}",
+            headers={
+                "X-BB-API-Key": BROWSERBASE_API_KEY,
+                "Content-Type": "application/json"
+            },
+            json={
+                "status": "REQUEST_RELEASE",
+                "projectId": BROWSERBASE_PROJECT_ID
+            }
+        )
     except Exception as e:
-        print(f"Error closing session {session_id}: {e}")
+        logger.warning(f"Error closing session {session_id}: {e}")
 
 
 @weave.op()
@@ -281,7 +309,7 @@ async def extract_article_content(url: str, use_cache: bool = True) -> Optional[
         if session_id:
             try:
                 await close_browser_session(session_id)
-            except:
+            except Exception:
                 pass
 
 
@@ -911,7 +939,7 @@ async def fetch_cross_reference_content(
                 if content:
                     ref.full_text = content.full_text
                     ref.excerpt = content.excerpt
-            except:
+            except Exception:
                 pass
             return ref
 
