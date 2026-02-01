@@ -314,7 +314,11 @@
       }
 
     } catch (error) {
-      console.warn('InterestLens: Failed to sync activity', error);
+      // Only log if it's not a common network error
+      if (error.message && !error.message.includes('Failed to fetch') &&
+          !error.message.includes('Extension context invalidated')) {
+        console.debug('InterestLens: Activity sync deferred', error.message);
+      }
       // Put items back in buffer for retry
       activityBuffer = [...bufferToSync, ...activityBuffer];
     }

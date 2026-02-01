@@ -6,16 +6,15 @@ from models.profile import UserProfile
 
 
 async def get_user_profile(user_id: str) -> Optional[UserProfile]:
-    """Get user profile from Redis"""
-    r = await get_redis()
-    try:
-        data = await r.json().get(f"user:{user_id}")
+    """
+    Get user profile from Redis.
+    Includes voice preferences if voice onboarding was completed.
+    """
+    data = await json_get(f"user:{user_id}")
 
-        if data:
-            return UserProfile(**data)
-        return None
-    except:
-        return None
+    if data:
+        return UserProfile(**data)
+    return None
 
 
 

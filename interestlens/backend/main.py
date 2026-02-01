@@ -89,14 +89,11 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS configuration
+# CORS configuration - allow all origins for Chrome extension compatibility
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        os.getenv("FRONTEND_URL", "http://localhost:3000"),
-        "chrome-extension://*",
-    ],
-    allow_credentials=True,
+    allow_origins=["*"],  # Allow all origins (required for Chrome extensions)
+    allow_credentials=False,  # Must be False when using allow_origins=["*"]
     allow_methods=["*"],
     allow_headers=["*"],
 )

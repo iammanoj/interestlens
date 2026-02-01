@@ -34,6 +34,25 @@
   let overlayElement = null;
   let recognition = null;
   let isListening = false;
+  let isCleaningUp = false;  // Flag to suppress errors during cleanup
+
+  /**
+   * Safe fetch wrapper that handles errors gracefully
+   */
+  function safeFetch(url, options) {
+    if (isCleaningUp) {
+      return Promise.resolve({ ok: false, json: function() { return Promise.resolve({}); } });
+    }
+    return fetch(url, options).catch(function(e) {
+      // Suppress common non-critical errors
+      if (e.message && (e.message.includes('Extension context invalidated') ||
+                        e.message.includes('Failed to fetch'))) {
+        console.debug('[InterestLens] Network request skipped:', url);
+        return { ok: false, json: function() { return Promise.resolve({}); } };
+      }
+      throw e;
+    });
+  }
 
   /**
    * Check if user has completed onboarding
@@ -933,6 +952,7 @@
    */
   function endDailySession() {
     console.log('[InterestLens] Ending Daily session');
+    isCleaningUp = true;  // Suppress errors during cleanup
     stopPollingForPreferences();
 
     // Remove iframe to disconnect
@@ -941,13 +961,13 @@
       iframe.src = 'about:blank';
     }
 
-    // End session on backend
+    // End session on backend (fire and forget - don't wait for response)
     if (voiceSession && voiceSession.roomName) {
-      fetch(BACKEND_URL + '/voice/session/' + voiceSession.roomName + '/end', {
+      safeFetch(BACKEND_URL + '/voice/session/' + voiceSession.roomName + '/end', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       }).catch(function(e) {
-        console.warn('[InterestLens] Failed to end session:', e);
+        // Silently ignore - session cleanup is best-effort
       });
     }
   }

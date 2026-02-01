@@ -28,9 +28,16 @@ from services.redis_client import (
     update_extracted_categories
 )
 
-# Configure Gemini
+# Configure Gemini - use flash-lite for fastest response times
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-conversation_model = genai.GenerativeModel("gemini-2.0-flash")
+# gemini-2.0-flash-lite is optimized for low-latency, high-throughput use cases
+conversation_model = genai.GenerativeModel(
+    "gemini-2.0-flash-lite",
+    generation_config={
+        "max_output_tokens": 50,  # Limit output length for faster response
+        "temperature": 0.7,
+    }
+)
 
 # Limit conversation history to prevent unbounded memory growth
 MAX_CONVERSATION_HISTORY = 20  # Keep last 20 messages (10 exchanges)
@@ -54,27 +61,13 @@ class ConversationState:
 # Conversation prompts
 OPENING_MESSAGE = "Hi! What topics interest you?"
 
-CONVERSATION_SYSTEM_PROMPT = """You are a concise onboarding assistant. Your job: quickly learn user content preferences.
+# Shorter prompt = faster LLM response
+CONVERSATION_SYSTEM_PROMPT = """Onboarding assistant. Learn user preferences quickly.
+Topics: {topics_summary}
+History: {recent_history}
+User: "{user_message}"
 
-Phase: {phase}
-Topics so far: {topics_summary}
-
-RULES:
-- MAX 10 words per response
-- Ask ONE simple question at a time
-- No filler words or pleasantries
-- Examples of good responses:
-  - "Got it. Any topics to avoid?"
-  - "What else interests you?"
-  - "Anything you dislike?"
-  - "All set?"
-
-Recent conversation:
-{recent_history}
-
-User said: "{user_message}"
-
-Respond in 10 words or less."""
+Reply in 8 words max. Ask one question."""
 
 
 # End detection keywords
@@ -196,12 +189,20 @@ class OnboardingAgent:
                 else:
                     response = await self._generate_response(message)
             else:
-                # Extract preferences and categories BEFORE generating response
-                # This ensures categories are saved to Redis before the Chrome extension polls
-                await self._extract_and_update(message)
+                # Run extraction and response generation IN PARALLEL for lower latency
+                # Extraction runs in background while we generate the response
+                extraction_task = asyncio.create_task(self._extract_and_update(message))
+                response_task = asyncio.create_task(self._generate_response(message))
 
-                # Generate conversational response
-                response = await self._generate_response(message)
+                # Wait for response first (user-facing latency)
+                response = await response_task
+
+                # Wait for extraction to complete (usually finishes before response)
+                try:
+                    await asyncio.wait_for(extraction_task, timeout=2.0)
+                except asyncio.TimeoutError:
+                    # Let extraction continue in background if slow
+                    pass
 
                 # Check if we should suggest wrapping up
                 if self.state.turn_count >= 4 and len(self.state.extracted_preferences.topics) >= 2:
@@ -330,9 +331,8 @@ class OnboardingAgent:
         )
 
         prompt = CONVERSATION_SYSTEM_PROMPT.format(
-            phase=self.state.phase,
             topics_summary=topics_summary,
-            recent_history=recent_history or "Start of conversation",
+            recent_history=recent_history or "Start",
             user_message=user_message
         )
 

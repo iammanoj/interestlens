@@ -101,7 +101,11 @@
       return userInterests;
 
     } catch (error) {
-      console.warn('InterestLens: Failed to fetch interests', error);
+      // Only log if it's not a common network error
+      if (error.message && !error.message.includes('Failed to fetch') &&
+          !error.message.includes('Extension context invalidated')) {
+        console.debug('InterestLens: Interests fetch deferred', error.message);
+      }
       return userInterests || { likes: [], dislikes: [], topicAffinities: {} };
     }
   }

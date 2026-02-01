@@ -150,6 +150,16 @@ async def create_voice_pipeline(
     )
 
     # Daily transport configuration - disable built-in transcription, use OpenAI STT instead
+    # Optimized VAD settings for lower latency
+    vad = SileroVADAnalyzer(
+        params=SileroVADAnalyzer.VADParams(
+            confidence=0.6,      # Lower threshold = faster detection (default 0.7)
+            start_secs=0.1,      # Start speaking detection (default 0.2)
+            stop_secs=0.4,       # Reduced from 0.8 - faster end-of-speech detection
+            min_volume=0.5,      # Slightly lower volume threshold
+        )
+    )
+
     transport = DailyTransport(
         room_url=room_url,
         token=room_token,
@@ -157,20 +167,23 @@ async def create_voice_pipeline(
         params=DailyParams(
             audio_in_enabled=True,
             audio_out_enabled=True,
-            vad_analyzer=SileroVADAnalyzer(),  # Use Silero VAD for speech detection
+            vad_analyzer=vad,  # Optimized VAD for low latency
             transcription_enabled=False,  # Disable Daily's transcription - using OpenAI STT
         )
     )
 
-    # OpenAI STT for speech-to-text (Whisper)
+    # OpenAI STT for speech-to-text (Whisper) - optimized for low latency
     stt = OpenAISTTService(
         api_key=os.getenv("OPENAI_API_KEY"),
+        model="whisper-1",  # Fastest Whisper model
     )
 
-    # OpenAI TTS for speech synthesis
+    # OpenAI TTS for speech synthesis - optimized for streaming
     tts = OpenAITTSService(
         api_key=os.getenv("OPENAI_API_KEY"),
-        voice="nova",  # Friendly female voice
+        voice="nova",        # Friendly female voice
+        model="tts-1",       # Faster model (vs tts-1-hd)
+        speed=1.1,           # Slightly faster speech
     )
 
     # Create the onboarding processor
