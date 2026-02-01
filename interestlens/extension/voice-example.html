@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>InterestLens Voice</title>
+  <style>
+    body {
+      width: 350px;
+      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    .status {
+      padding: 10px;
+      border-radius: 8px;
+      margin-bottom: 15px;
+      text-align: center;
+    }
+    .status.disconnected { background: #fee; color: #c00; }
+    .status.connected { background: #efe; color: #0a0; }
+    .status.listening { background: #eef; color: #00a; }
+
+    .mic-button {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      border: none;
+      background: #4a90d9;
+      color: white;
+      font-size: 32px;
+      cursor: pointer;
+      display: block;
+      margin: 20px auto;
+      transition: all 0.2s;
+    }
+    .mic-button:hover { background: #3a80c9; transform: scale(1.05); }
+    .mic-button.listening { background: #d94a4a; animation: pulse 1s infinite; }
+    .mic-button:disabled { background: #ccc; cursor: not-allowed; }
+
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(217, 74, 74, 0.4); }
+      50% { box-shadow: 0 0 0 15px rgba(217, 74, 74, 0); }
+    }
+
+    .transcript {
+      background: #f5f5f5;
+      border-radius: 8px;
+      padding: 15px;
+      max-height: 200px;
+      overflow-y: auto;
+      margin-top: 15px;
+    }
+    .transcript p { margin: 8px 0; }
+    .transcript .user { color: #333; }
+    .transcript .assistant { color: #4a90d9; font-style: italic; }
+
+    .instructions {
+      font-size: 12px;
+      color: #666;
+      text-align: center;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div id="status" class="status disconnected">Disconnected</div>
+
+  <button id="micButton" class="mic-button" disabled>🎤</button>
+
+  <p class="instructions">Click and hold to speak. Release to process.</p>
+
+  <div id="transcript" class="transcript">
+    <p><em>Conversation will appear here...</em></p>
+  </div>
+
+  <script src="voice-client.js"></script>
+  <script>
+    const BACKEND_URL = 'ws://localhost:8000/voice/audio-stream';
+    const sessionId = 'ext-' + Date.now();
+
+    let voiceClient = null;
+
+    const statusEl = document.getElementById('status');
+    const micButton = document.getElementById('micButton');
+    const transcriptEl = document.getElementById('transcript');
+
+    function updateStatus(status, text) {
+      statusEl.className = 'status ' + status;
+      statusEl.textContent = text;
+    }
+
+    function addTranscript(text, speaker) {
+      const p = document.createElement('p');
+      p.className = speaker;
+      p.textContent = (speaker === 'user' ? '🗣️ You: ' : '🤖 Agent: ') + text;
+      transcriptEl.appendChild(p);
+      transcriptEl.scrollTop = transcriptEl.scrollHeight;
+    }
+
+    async function initVoiceClient() {
+      voiceClient = new VoiceClient(`${BACKEND_URL}/${sessionId}`, {
+        sampleRate: 16000,
+
+        onConnected: (data) => {
+          updateStatus('connected', 'Connected - Ready to listen');
+          micButton.disabled = false;
+        },
+
+        onDisconnected: () => {
+          updateStatus('disconnected', 'Disconnected');
+          micButton.disabled = true;
+          micButton.classList.remove('listening');
+        },
+
+        onTranscription: (text, speaker) => {
+          addTranscript(text, speaker);
+        },
+
+        onAgentResponse: (response) => {
+          addTranscript(response.text, 'assistant');
+
+          if (response.isComplete) {
+            updateStatus('connected', 'Onboarding complete!');
+            console.log('Preferences:', response.preferences);
+          }
+        },
+
+        onListeningStateChange: (isListening) => {
+          if (isListening) {
+            micButton.classList.add('listening');
+            updateStatus('listening', '🎤 Listening...');
+          } else {
+            micButton.classList.remove('listening');
+            updateStatus('connected', 'Processing...');
+          }
+        },
+
+        onError: (error) => {
+          console.error('Voice error:', error);
+          updateStatus('disconnected', 'Error: ' + error.message);
+        }
+      });
+
+      try {
+        updateStatus('disconnected', 'Connecting...');
+        await voiceClient.connect();
+      } catch (error) {
+        updateStatus('disconnected', 'Connection failed');
+      }
+    }
+
+    // Push-to-talk: Hold button to speak
+    micButton.addEventListener('mousedown', async () => {
+      if (!voiceClient || !voiceClient.isConnected) return;
+      try {
+        await voiceClient.startListening();
+      } catch (e) {
+        console.error('Microphone error:', e);
+      }
+    });
+
+    micButton.addEventListener('mouseup', () => {
+      if (voiceClient && voiceClient.isListening) {
+        voiceClient.stopListening();
+      }
+    });
+
+    micButton.addEventListener('mouseleave', () => {
+      if (voiceClient && voiceClient.isListening) {
+        voiceClient.stopListening();
+      }
+    });
+
+    // Keyboard shortcut: Hold Space to speak
+    document.addEventListener('keydown', async (e) => {
+      if (e.code === 'Space' && !e.repeat && voiceClient && voiceClient.isConnected) {
+        e.preventDefault();
+        try {
+          await voiceClient.startListening();
+        } catch (err) {
+          console.error('Microphone error:', err);
+        }
+      }
+    });
+
+    document.addEventListener('keyup', (e) => {
+      if (e.code === 'Space' && voiceClient && voiceClient.isListening) {
+        e.preventDefault();
+        voiceClient.stopListening();
+      }
+    });
+
+    // Initialize on load
+    initVoiceClient();
+
+    // Cleanup on unload
+    window.addEventListener('beforeunload', () => {
+      if (voiceClient) {
+        voiceClient.disconnect();
+      }
+    });
+  </script>
+</body>
+</html>

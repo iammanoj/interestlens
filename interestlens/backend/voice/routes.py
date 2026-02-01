@@ -23,6 +23,7 @@ from voice.session_manager import (
     get_session_status
 )
 from voice.websocket import websocket_endpoint
+from voice.audio_websocket import audio_websocket_handler
 
 router = APIRouter()
 
@@ -166,6 +167,33 @@ async def voice_session_websocket(websocket: WebSocket, room_name: str):
     - {"type": "get_status"} -> responds with current status
     """
     await websocket_endpoint(websocket, room_name)
+
+
+@router.websocket("/audio-stream/{session_id}")
+async def audio_stream_websocket(websocket: WebSocket, session_id: str):
+    """
+    WebSocket endpoint for real-time audio streaming from Chrome extension.
+
+    Connect to: ws://backend/voice/audio-stream/{session_id}
+
+    This endpoint allows Chrome extensions to stream audio for voice interaction.
+
+    Client sends:
+    - {"type": "start_listening"} - Begin capturing audio
+    - {"type": "audio_chunk", "data": "<base64 PCM audio>"} - Stream audio chunks
+    - {"type": "stop_listening"} - Stop and process accumulated audio
+    - {"type": "ping"} - Keepalive
+
+    Server sends:
+    - {"type": "connected", "session_id": "..."}
+    - {"type": "listening_started"}
+    - {"type": "processing", "message": "..."}
+    - {"type": "transcription", "text": "...", "speaker": "user"}
+    - {"type": "agent_response", "text": "...", "is_complete": bool, "preferences": {...}}
+    - {"type": "error", "error": "..."}
+    - {"type": "heartbeat"}
+    """
+    await audio_websocket_handler(websocket, session_id)
 
 
 @router.post("/text-message", response_model=TextMessageResponse)
