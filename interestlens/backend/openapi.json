@@ -1,0 +1,1545 @@
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "InterestLens API",
+        "description": "AI-powered content personalization for the web",
+        "version": "1.0.0"
+    },
+    "paths": {
+        "/auth/google": {
+            "get": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Google Login",
+                "description": "Initiate Google OAuth flow",
+                "operationId": "google_login_auth_google_get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/callback": {
+            "get": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Google Callback",
+                "description": "Handle Google OAuth callback",
+                "operationId": "google_callback_auth_callback_get",
+                "parameters": [
+                    {
+                        "name": "code",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "title": "Code"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/me": {
+            "get": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Get Current User Info",
+                "description": "Get current user info from JWT",
+                "operationId": "get_current_user_info_auth_me_get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/logout": {
+            "post": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Logout",
+                "description": "Logout - client should clear stored token",
+                "operationId": "logout_auth_logout_post",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/dev-token": {
+            "post": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Create Dev Token",
+                "description": "DEV ONLY: Create a test JWT token without OAuth.\nRemove this endpoint in production!",
+                "operationId": "create_dev_token_auth_dev_token_post",
+                "parameters": [
+                    {
+                        "name": "user_id",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "default": "dev_user_123",
+                            "title": "User Id"
+                        }
+                    },
+                    {
+                        "name": "name",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "default": "Dev User",
+                            "title": "Name"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/voice/start-session": {
+            "post": {
+                "tags": [
+                    "Voice Onboarding"
+                ],
+                "summary": "Start Voice Session",
+                "description": "Create a Daily room for voice onboarding and start the bot",
+                "operationId": "start_voice_session_voice_start_session_post",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/voice/session/{room_name}/status": {
+            "get": {
+                "tags": [
+                    "Voice Onboarding"
+                ],
+                "summary": "Get Voice Session Status",
+                "description": "Get the status of a voice session and current preferences",
+                "operationId": "get_voice_session_status_voice_session__room_name__status_get",
+                "parameters": [
+                    {
+                        "name": "room_name",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "title": "Room Name"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/voice/session/{room_name}/end": {
+            "post": {
+                "tags": [
+                    "Voice Onboarding"
+                ],
+                "summary": "End Voice Session",
+                "description": "Manually end a voice session",
+                "operationId": "end_voice_session_voice_session__room_name__end_post",
+                "parameters": [
+                    {
+                        "name": "room_name",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "title": "Room Name"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/voice/text-message": {
+            "post": {
+                "tags": [
+                    "Voice Onboarding"
+                ],
+                "summary": "Send Text Message",
+                "description": "Send a text message for text-based onboarding fallback.\n\nUse this when voice fails or is unavailable.\nFirst message in a session will receive the opening greeting.",
+                "operationId": "send_text_message_voice_text_message_post",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TextMessageRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TextMessageResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/voice/text-session/{session_id}/status": {
+            "get": {
+                "tags": [
+                    "Voice Onboarding"
+                ],
+                "summary": "Get Text Session Status Endpoint",
+                "description": "Get the status of a text session",
+                "operationId": "get_text_session_status_endpoint_voice_text_session__session_id__status_get",
+                "parameters": [
+                    {
+                        "name": "session_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "title": "Session Id"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/voice/text-session/{session_id}/end": {
+            "post": {
+                "tags": [
+                    "Voice Onboarding"
+                ],
+                "summary": "End Text Session Endpoint",
+                "description": "End a text session and save preferences",
+                "operationId": "end_text_session_endpoint_voice_text_session__session_id__end_post",
+                "parameters": [
+                    {
+                        "name": "session_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "title": "Session Id"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/voice/text-session/opening": {
+            "get": {
+                "tags": [
+                    "Voice Onboarding"
+                ],
+                "summary": "Get Opening Message",
+                "description": "Get the opening message for a new text session",
+                "operationId": "get_opening_message_voice_text_session_opening_get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/voice/preferences": {
+            "get": {
+                "tags": [
+                    "Voice Onboarding"
+                ],
+                "summary": "Get Voice Preferences",
+                "description": "Get user's voice onboarding preferences",
+                "operationId": "get_voice_preferences_voice_preferences_get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Voice Onboarding"
+                ],
+                "summary": "Clear Voice Preferences",
+                "description": "Clear voice preferences and allow re-onboarding",
+                "operationId": "clear_voice_preferences_voice_preferences_delete",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/voice/save-preferences": {
+            "post": {
+                "tags": [
+                    "Voice Onboarding"
+                ],
+                "summary": "Save Voice Preferences",
+                "description": "Save extracted voice preferences.\nCalled by the Pipecat bot after conversation ends.",
+                "operationId": "save_voice_preferences_voice_save_preferences_post",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/VoicePreferences"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/": {
+            "get": {
+                "summary": "Root",
+                "operationId": "root__get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/health": {
+            "get": {
+                "summary": "Health",
+                "operationId": "health_health_get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/analyze_page": {
+            "post": {
+                "summary": "Analyze Page",
+                "description": "Analyze a page and return scored items.\nWorks in limited mode without auth (no personalization).\nSet check_authenticity=true to run authenticity checks on news items.",
+                "operationId": "analyze_page_analyze_page_post",
+                "parameters": [
+                    {
+                        "name": "check_authenticity",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean",
+                            "default": true,
+                            "title": "Check Authenticity"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/AnalyzePageRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AnalyzePageResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/event": {
+            "post": {
+                "summary": "Log Event",
+                "description": "Log a user interaction event (click, dwell, thumbs up/down).\nRequires authentication.",
+                "operationId": "log_event_event_post",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/EventRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/EventResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/preview_url": {
+            "post": {
+                "summary": "Preview Url",
+                "description": "Fetch a rich preview for a URL using Browserbase + Stagehand.",
+                "operationId": "preview_url_preview_url_post",
+                "parameters": [
+                    {
+                        "name": "url",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "title": "Url"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/check_authenticity": {
+            "post": {
+                "summary": "Check Authenticity",
+                "description": "Check authenticity of a single article.\nExtracts claims and verifies against cross-reference sources.",
+                "operationId": "check_authenticity_check_authenticity_post",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/AuthenticityCheckRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AuthenticityCheckResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/check_authenticity/batch": {
+            "post": {
+                "summary": "Check Authenticity Batch",
+                "description": "Batch authenticity check for multiple items.\nRuns checks in parallel for performance.",
+                "operationId": "check_authenticity_batch_check_authenticity_batch_post",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/BatchAuthenticityRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/BatchAuthenticityResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/authenticity_status/{item_id}": {
+            "get": {
+                "summary": "Get Authenticity Status",
+                "description": "Get the authenticity check status/result for an item.\nReturns cached result if available.",
+                "operationId": "get_authenticity_status_authenticity_status__item_id__get",
+                "parameters": [
+                    {
+                        "name": "item_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "title": "Item Id"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/check_authenticity/file": {
+            "post": {
+                "summary": "Check Authenticity From File",
+                "description": "Batch authenticity check from an uploaded file containing URLs.\n\nThe file should contain one URL per line.\nLines starting with # are treated as comments and ignored.\nBlank lines are ignored.\n\nArgs:\n    file: Text file with URLs (one per line)\n    max_concurrent: Maximum concurrent checks (1-10, default: 3)\n    check_depth: Check depth: quick, standard, or thorough (default: standard)\n\nReturns:\n    BatchAuthenticityResponse with results for each URL",
+                "operationId": "check_authenticity_from_file_check_authenticity_file_post",
+                "parameters": [
+                    {
+                        "name": "max_concurrent",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "maximum": 10,
+                            "minimum": 1,
+                            "default": 3,
+                            "title": "Max Concurrent"
+                        }
+                    },
+                    {
+                        "name": "check_depth",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "default": "standard",
+                            "title": "Check Depth"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Body_check_authenticity_from_file_check_authenticity_file_post"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/BatchAuthenticityResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "AnalyzePageRequest": {
+                "properties": {
+                    "page_url": {
+                        "type": "string",
+                        "title": "Page Url"
+                    },
+                    "dom_outline": {
+                        "$ref": "#/components/schemas/DOMOutline"
+                    },
+                    "items": {
+                        "items": {
+                            "$ref": "#/components/schemas/PageItem"
+                        },
+                        "type": "array",
+                        "title": "Items"
+                    },
+                    "screenshot_base64": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Screenshot Base64"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "page_url",
+                    "dom_outline",
+                    "items"
+                ],
+                "title": "AnalyzePageRequest"
+            },
+            "AnalyzePageResponse": {
+                "properties": {
+                    "items": {
+                        "items": {
+                            "$ref": "#/components/schemas/ScoredItem"
+                        },
+                        "type": "array",
+                        "title": "Items"
+                    },
+                    "page_topics": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "Page Topics",
+                        "default": []
+                    },
+                    "profile_summary": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/ProfileSummary"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "weave_trace_url": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Weave Trace Url"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "items"
+                ],
+                "title": "AnalyzePageResponse"
+            },
+            "AuthenticityCheckRequest": {
+                "properties": {
+                    "item_id": {
+                        "type": "string",
+                        "title": "Item Id"
+                    },
+                    "url": {
+                        "type": "string",
+                        "title": "Url"
+                    },
+                    "text": {
+                        "type": "string",
+                        "title": "Text"
+                    },
+                    "check_depth": {
+                        "type": "string",
+                        "title": "Check Depth",
+                        "default": "standard"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "item_id",
+                    "url",
+                    "text"
+                ],
+                "title": "AuthenticityCheckRequest",
+                "description": "Request to check authenticity of an article"
+            },
+            "AuthenticityCheckResponse": {
+                "properties": {
+                    "item_id": {
+                        "type": "string",
+                        "title": "Item Id"
+                    },
+                    "authenticity_score": {
+                        "type": "integer",
+                        "title": "Authenticity Score"
+                    },
+                    "confidence": {
+                        "type": "number",
+                        "title": "Confidence"
+                    },
+                    "verification_status": {
+                        "type": "string",
+                        "title": "Verification Status"
+                    },
+                    "sources_checked": {
+                        "type": "integer",
+                        "title": "Sources Checked"
+                    },
+                    "corroborating_count": {
+                        "type": "integer",
+                        "title": "Corroborating Count"
+                    },
+                    "conflicting_count": {
+                        "type": "integer",
+                        "title": "Conflicting Count"
+                    },
+                    "explanation": {
+                        "type": "string",
+                        "title": "Explanation"
+                    },
+                    "checked_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "title": "Checked At"
+                    },
+                    "processing_time_ms": {
+                        "type": "integer",
+                        "title": "Processing Time Ms"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "item_id",
+                    "authenticity_score",
+                    "confidence",
+                    "verification_status",
+                    "sources_checked",
+                    "corroborating_count",
+                    "conflicting_count",
+                    "explanation",
+                    "checked_at",
+                    "processing_time_ms"
+                ],
+                "title": "AuthenticityCheckResponse",
+                "description": "Response with authenticity analysis"
+            },
+            "BatchAuthenticityRequest": {
+                "properties": {
+                    "items": {
+                        "items": {
+                            "$ref": "#/components/schemas/AuthenticityCheckRequest"
+                        },
+                        "type": "array",
+                        "title": "Items"
+                    },
+                    "max_concurrent": {
+                        "type": "integer",
+                        "title": "Max Concurrent",
+                        "default": 3
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "items"
+                ],
+                "title": "BatchAuthenticityRequest",
+                "description": "Batch request for multiple items"
+            },
+            "BatchAuthenticityResponse": {
+                "properties": {
+                    "results": {
+                        "items": {
+                            "$ref": "#/components/schemas/AuthenticityCheckResponse"
+                        },
+                        "type": "array",
+                        "title": "Results"
+                    },
+                    "total_processing_time_ms": {
+                        "type": "integer",
+                        "title": "Total Processing Time Ms"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "results",
+                    "total_processing_time_ms"
+                ],
+                "title": "BatchAuthenticityResponse",
+                "description": "Batch response"
+            },
+            "Body_check_authenticity_from_file_check_authenticity_file_post": {
+                "properties": {
+                    "file": {
+                        "type": "string",
+                        "format": "binary",
+                        "title": "File"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "file"
+                ],
+                "title": "Body_check_authenticity_from_file_check_authenticity_file_post"
+            },
+            "ContentPreference": {
+                "properties": {
+                    "preferred_formats": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "Preferred Formats",
+                        "default": []
+                    },
+                    "avoid_formats": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "Avoid Formats",
+                        "default": []
+                    },
+                    "preferred_length": {
+                        "type": "string",
+                        "title": "Preferred Length",
+                        "default": "any"
+                    }
+                },
+                "type": "object",
+                "title": "ContentPreference",
+                "description": "Content format preferences"
+            },
+            "DOMOutline": {
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "title": "Title"
+                    },
+                    "headings": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "Headings",
+                        "default": []
+                    },
+                    "main_text_excerpt": {
+                        "type": "string",
+                        "title": "Main Text Excerpt",
+                        "default": ""
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "title"
+                ],
+                "title": "DOMOutline"
+            },
+            "EventRequest": {
+                "properties": {
+                    "event": {
+                        "type": "string",
+                        "title": "Event"
+                    },
+                    "item_id": {
+                        "type": "string",
+                        "title": "Item Id"
+                    },
+                    "page_url": {
+                        "type": "string",
+                        "title": "Page Url"
+                    },
+                    "timestamp": {
+                        "type": "integer",
+                        "title": "Timestamp"
+                    },
+                    "item_data": {
+                        "$ref": "#/components/schemas/ItemData"
+                    },
+                    "duration_ms": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Duration Ms"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "event",
+                    "item_id",
+                    "page_url",
+                    "timestamp",
+                    "item_data"
+                ],
+                "title": "EventRequest"
+            },
+            "EventResponse": {
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "title": "Status"
+                    },
+                    "profile_updated": {
+                        "type": "boolean",
+                        "title": "Profile Updated"
+                    },
+                    "new_top_topics": {
+                        "anyOf": [
+                            {
+                                "items": {
+                                    "prefixItems": [
+                                        {
+                                            "type": "string"
+                                        },
+                                        {
+                                            "type": "number"
+                                        }
+                                    ],
+                                    "type": "array",
+                                    "maxItems": 2,
+                                    "minItems": 2
+                                },
+                                "type": "array"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "New Top Topics"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "status",
+                    "profile_updated"
+                ],
+                "title": "EventResponse"
+            },
+            "HTTPValidationError": {
+                "properties": {
+                    "detail": {
+                        "items": {
+                            "$ref": "#/components/schemas/ValidationError"
+                        },
+                        "type": "array",
+                        "title": "Detail"
+                    }
+                },
+                "type": "object",
+                "title": "HTTPValidationError"
+            },
+            "ItemData": {
+                "properties": {
+                    "text": {
+                        "type": "string",
+                        "title": "Text"
+                    },
+                    "topics": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "Topics",
+                        "default": []
+                    },
+                    "embedding": {
+                        "anyOf": [
+                            {
+                                "items": {
+                                    "type": "number"
+                                },
+                                "type": "array"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Embedding"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "text"
+                ],
+                "title": "ItemData"
+            },
+            "PageItem": {
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "title": "Id"
+                    },
+                    "href": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Href"
+                    },
+                    "text": {
+                        "type": "string",
+                        "title": "Text"
+                    },
+                    "snippet": {
+                        "type": "string",
+                        "title": "Snippet",
+                        "default": ""
+                    },
+                    "bbox": {
+                        "items": {
+                            "type": "integer"
+                        },
+                        "type": "array",
+                        "title": "Bbox",
+                        "default": []
+                    },
+                    "thumbnail_base64": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Thumbnail Base64"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "id",
+                    "text"
+                ],
+                "title": "PageItem"
+            },
+            "ProfileSummary": {
+                "properties": {
+                    "top_topics": {
+                        "items": {
+                            "prefixItems": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "number"
+                                }
+                            ],
+                            "type": "array",
+                            "maxItems": 2,
+                            "minItems": 2
+                        },
+                        "type": "array",
+                        "title": "Top Topics"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "top_topics"
+                ],
+                "title": "ProfileSummary"
+            },
+            "ScoredItem": {
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "title": "Id"
+                    },
+                    "score": {
+                        "type": "integer",
+                        "title": "Score"
+                    },
+                    "topics": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "Topics"
+                    },
+                    "why": {
+                        "type": "string",
+                        "title": "Why"
+                    },
+                    "authenticity_score": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Authenticity Score"
+                    },
+                    "authenticity_status": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Authenticity Status"
+                    },
+                    "authenticity_explanation": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Authenticity Explanation"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "id",
+                    "score",
+                    "topics",
+                    "why"
+                ],
+                "title": "ScoredItem"
+            },
+            "TextMessageRequest": {
+                "properties": {
+                    "session_id": {
+                        "type": "string",
+                        "title": "Session Id"
+                    },
+                    "message": {
+                        "type": "string",
+                        "title": "Message"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "session_id",
+                    "message"
+                ],
+                "title": "TextMessageRequest",
+                "description": "Request model for text-based messages."
+            },
+            "TextMessageResponse": {
+                "properties": {
+                    "response": {
+                        "type": "string",
+                        "title": "Response"
+                    },
+                    "preferences_detected": {
+                        "additionalProperties": true,
+                        "type": "object",
+                        "title": "Preferences Detected"
+                    },
+                    "is_complete": {
+                        "type": "boolean",
+                        "title": "Is Complete"
+                    },
+                    "session_id": {
+                        "type": "string",
+                        "title": "Session Id"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "response",
+                    "preferences_detected",
+                    "is_complete",
+                    "session_id"
+                ],
+                "title": "TextMessageResponse",
+                "description": "Response model for text-based messages."
+            },
+            "TopicPreference": {
+                "properties": {
+                    "topic": {
+                        "type": "string",
+                        "title": "Topic"
+                    },
+                    "sentiment": {
+                        "type": "string",
+                        "title": "Sentiment"
+                    },
+                    "intensity": {
+                        "type": "number",
+                        "title": "Intensity"
+                    },
+                    "subtopics": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "Subtopics",
+                        "default": []
+                    },
+                    "avoid_subtopics": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "Avoid Subtopics",
+                        "default": []
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "topic",
+                    "sentiment",
+                    "intensity"
+                ],
+                "title": "TopicPreference",
+                "description": "A topic preference from voice onboarding"
+            },
+            "ValidationError": {
+                "properties": {
+                    "loc": {
+                        "items": {
+                            "anyOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "integer"
+                                }
+                            ]
+                        },
+                        "type": "array",
+                        "title": "Location"
+                    },
+                    "msg": {
+                        "type": "string",
+                        "title": "Message"
+                    },
+                    "type": {
+                        "type": "string",
+                        "title": "Error Type"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "loc",
+                    "msg",
+                    "type"
+                ],
+                "title": "ValidationError"
+            },
+            "VoicePreferences": {
+                "properties": {
+                    "topics": {
+                        "items": {
+                            "$ref": "#/components/schemas/TopicPreference"
+                        },
+                        "type": "array",
+                        "title": "Topics",
+                        "default": []
+                    },
+                    "content": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/ContentPreference"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "raw_transcript": {
+                        "type": "string",
+                        "title": "Raw Transcript",
+                        "default": ""
+                    },
+                    "confidence": {
+                        "type": "number",
+                        "title": "Confidence",
+                        "default": 0.0
+                    }
+                },
+                "type": "object",
+                "title": "VoicePreferences",
+                "description": "Preferences extracted from voice onboarding"
+            }
+        }
+    }
+}
