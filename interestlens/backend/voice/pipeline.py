@@ -53,14 +53,8 @@ class OnboardingProcessor(FrameProcessor):
         self._started = False
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
-        """Process incoming frames."""
+        """Process incoming frames - optimized for low latency."""
         await super().process_frame(frame, direction)
-
-        # Debug: log all incoming frames
-        frame_type = type(frame).__name__
-        if frame_type not in ["AudioRawFrame", "StartFrame", "StartInterruptionFrame", "StopInterruptionFrame"]:
-            logger.info(f"[PIPELINE] Received frame: {frame_type}")
-            sys.stdout.flush()
 
         if isinstance(frame, TranscriptionFrame):
             # User speech transcribed (final)
@@ -154,13 +148,13 @@ async def create_voice_pipeline(
     )
 
     # Daily transport configuration - disable built-in transcription, use OpenAI STT instead
-    # Optimized VAD settings for lower latency
+    # Optimized VAD settings for lowest latency
     vad = SileroVADAnalyzer(
         params=VADParams(
-            confidence=0.6,      # Lower threshold = faster detection (default 0.7)
-            start_secs=0.1,      # Start speaking detection (default 0.2)
-            stop_secs=0.4,       # Reduced from 0.8 - faster end-of-speech detection
-            min_volume=0.5,      # Slightly lower volume threshold
+            confidence=0.5,      # Lower threshold = faster detection (default 0.7)
+            start_secs=0.05,     # Very fast start detection
+            stop_secs=0.2,       # Reduced from 0.4 - faster end-of-speech detection
+            min_volume=0.4,      # Lower volume threshold
         )
     )
 
@@ -192,12 +186,12 @@ async def create_voice_pipeline(
         )
         logger.info("Using OpenAI Whisper STT")
 
-    # OpenAI TTS for speech synthesis - optimized for streaming
+    # OpenAI TTS for speech synthesis - optimized for low latency
     tts = OpenAITTSService(
         api_key=os.getenv("OPENAI_API_KEY"),
         voice="nova",        # Friendly female voice
         model="tts-1",       # Faster model (vs tts-1-hd)
-        speed=1.1,           # Slightly faster speech
+        speed=1.15,          # Faster speech for quicker responses
     )
 
     # Create the onboarding processor

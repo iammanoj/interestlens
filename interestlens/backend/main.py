@@ -126,7 +126,9 @@ async def analyze_page(
     Works in limited mode without auth (no personalization).
     Set check_authenticity=true to run authenticity checks on news items.
     """
-    user_id = user["id"] if user else None
+    # Use "anonymous" for unauthenticated users to match voice onboarding
+    # Voice session saves preferences to user:anonymous, so we must use the same ID
+    user_id = user["id"] if user else "anonymous"
 
     result = await analyze_page_pipeline(
         page_url=request.page_url,

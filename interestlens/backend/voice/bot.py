@@ -34,8 +34,8 @@ genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 conversation_model = genai.GenerativeModel(
     "gemini-2.0-flash-lite",
     generation_config={
-        "max_output_tokens": 50,  # Limit output length for faster response
-        "temperature": 0.7,
+        "max_output_tokens": 30,  # Shorter responses = faster TTS
+        "temperature": 0.5,       # Lower temp = faster generation
     }
 )
 
@@ -61,13 +61,10 @@ class ConversationState:
 # Conversation prompts
 OPENING_MESSAGE = "Hi! What topics interest you?"
 
-# Shorter prompt = faster LLM response
-CONVERSATION_SYSTEM_PROMPT = """Onboarding assistant. Learn user preferences quickly.
-Topics: {topics_summary}
-History: {recent_history}
+# Ultra-short prompt for minimum latency
+CONVERSATION_SYSTEM_PROMPT = """Topics: {topics_summary}
 User: "{user_message}"
-
-Reply in 8 words max. Ask one question."""
+Reply in 5 words. Ask one thing."""
 
 
 # End detection keywords
@@ -323,25 +320,14 @@ class OnboardingAgent:
 
     async def _generate_response(self, user_message: str) -> str:
         """Generate a conversational response using Gemini."""
-        # Build topics summary
-        topics_summary = "None detected yet"
+        # Build topics summary - keep very short
+        topics_summary = "none"
         if self.state.extracted_preferences.topics:
-            topics = [
-                f"{t.topic} ({t.sentiment})"
-                for t in self.state.extracted_preferences.topics
-            ]
+            topics = [t.topic for t in self.state.extracted_preferences.topics[:3]]
             topics_summary = ", ".join(topics)
-
-        # Build recent history
-        recent = self.state.conversation_history[-4:]
-        recent_history = "\n".join(
-            f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content']}"
-            for m in recent[:-1]  # Exclude current message
-        )
 
         prompt = CONVERSATION_SYSTEM_PROMPT.format(
             topics_summary=topics_summary,
-            recent_history=recent_history or "Start",
             user_message=user_message
         )
 
