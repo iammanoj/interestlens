@@ -240,6 +240,7 @@ async def voice_session_websocket(websocket: WebSocket, room_name: str):
     WebSocket endpoint for real-time voice session updates.
 
     Connect to receive live preference updates during voice onboarding.
+    Supports both voice sessions (Daily.co) and text sessions.
 
     IMPORTANT: Before connecting, validate the session using /validate-session/{room_name}
     to ensure the session is still active. Stale sessions will receive an error message
@@ -258,18 +259,17 @@ async def voice_session_websocket(websocket: WebSocket, room_name: str):
     - {"type": "get_status"} -> responds with current status
     """
     # Validate session before accepting WebSocket
+    # Check both voice sessions and text sessions
     status = await get_session_status(room_name)
     if not status["exists"]:
-        await websocket.accept()
-        await websocket.send_json({
-            "type": "error",
-            "error": status.get("message", "Session not found"),
-            "code": status.get("error", "SESSION_NOT_FOUND"),
-            "action": "start_new"
-        })
-        await websocket.close(code=1000, reason="Session not found")
-        return
+        # Also check if it's a text session
+        text_status = await get_text_session_status(room_name)
+        if text_status["exists"]:
+            status = text_status
 
+    # For text sessions, we allow WebSocket connections without pre-registration
+    # because text sessions are created on-demand via /text-message endpoint
+    # Just accept the connection - it will be used for session_complete notifications
     await websocket_endpoint(websocket, room_name)
 
 
@@ -455,6 +455,7 @@ async def save_voice_preferences(
     """
     Save extracted voice preferences.
     Called by the Pipecat bot after conversation ends.
+    Creates a new profile if one doesn't exist.
     """
     user_id = get_user_id(user, "anonymous")
     redis = await get_redis()
@@ -465,9 +466,15 @@ async def save_voice_preferences(
 
     profile_data = await json_get(profile_key)
     if not profile_data:
-        raise HTTPException(status_code=404, detail="User profile not found")
-
-    profile = UserProfile(**profile_data)
+        # Create new profile for this user (same as save_session_preferences)
+        print(f"[VOICE] Creating new profile for user {user_id}")
+        profile = UserProfile(
+            user_id=user_id,
+            email=user.get("email") if user else None,
+            name=user.get("name") if user else None
+        )
+    else:
+        profile = UserProfile(**profile_data)
 
     # Apply voice preferences to topic affinities
     for topic_pref in preferences.topics:
@@ -490,9 +497,12 @@ async def save_voice_preferences(
 
     await json_set(profile_key, "$", profile.model_dump())
 
+    print(f"[VOICE] Saved preferences for user {user_id}: {len(preferences.topics)} topics, affinities: {list(profile.topic_affinity.keys())}")
+
     return {
         "status": "saved",
-        "topics_count": len(preferences.topics)
+        "topics_count": len(preferences.topics),
+        "topic_affinities": len(profile.topic_affinity)
     }
 
 

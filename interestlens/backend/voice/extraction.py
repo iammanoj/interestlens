@@ -297,7 +297,11 @@ Be thorough - capture all topics, sentiments, and specific subtopics mentioned."
         )
 
     except Exception as e:
+        import traceback
         print(f"Final extraction error: {e}")
+        print(f"Traceback: {traceback.format_exc()}")
+        print(f"Conversation had {len(conversation_history)} messages")
+        # Return empty preferences but preserve the transcript for debugging
         return VoicePreferences(
             topics=[],
             content=None,

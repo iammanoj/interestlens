@@ -55,12 +55,18 @@ async def get_or_create_text_session(
             async def on_update(preferences: VoicePreferences):
                 await ws_manager.send_preference_update(session_id, preferences)
 
+            # Create session complete callback - THIS WAS MISSING!
+            async def on_complete(preferences: VoicePreferences):
+                print(f"[TEXT_SESSION] Session complete callback triggered for {session_id}")
+                await ws_manager.send_session_complete(session_id, preferences)
+
             # Create new agent with session_id for Redis storage
             agent = OnboardingAgent(
                 user_id=user_id,
                 room_name=session_id,  # Use session_id as room_name for consistency
                 session_id=session_id,  # Pass session_id for Redis transcription storage
-                on_preferences_update=on_update
+                on_preferences_update=on_update,
+                on_session_complete=on_complete  # Add session complete callback
             )
             _text_sessions[session_id] = agent
 
@@ -126,12 +132,15 @@ async def save_text_session_preferences(
     from voice.session_manager import save_session_preferences
 
     # Do final extraction from conversation history
+    print(f"[TEXT_SESSION] Extracting preferences from {len(agent.state.conversation_history)} messages for user {user_id}")
     final_prefs = await extract_final_preferences(
         agent.state.conversation_history
     )
+    print(f"[TEXT_SESSION] Extracted {len(final_prefs.topics)} topics with confidence {final_prefs.confidence}")
 
     # Save to user profile
     await save_session_preferences(session_id, user_id, final_prefs)
+    print(f"[TEXT_SESSION] Saved preferences for user {user_id}")
 
 
 async def cleanup_text_session(session_id: str):

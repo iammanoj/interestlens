@@ -58,12 +58,15 @@ class ConnectionManager:
 
     async def send_session_complete(self, room_name: str, preferences: VoicePreferences):
         """Notify clients that the session is complete."""
+        connection_count = self.get_connection_count(room_name)
+        print(f"[WEBSOCKET] Sending session_complete to {room_name} ({connection_count} connections)")
         message = {
             "type": "session_complete",
             "preferences": preferences.model_dump(),
             "topics_count": len(preferences.topics)
         }
         await self.broadcast_to_room(room_name, message)
+        print(f"[WEBSOCKET] session_complete sent successfully to {room_name}")
 
     async def send_status_update(self, room_name: str, status: dict):
         """Send a status update to all connected clients."""

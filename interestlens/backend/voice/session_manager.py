@@ -164,8 +164,16 @@ async def run_bot_process(session: SessionInfo):
         on_transcript = get_transcription_callback(session.room_name)
 
         # Wrap the completion callback to also save preferences
+        # IMPORTANT: Always send WebSocket notification even if save fails
         async def on_session_complete(preferences: VoicePreferences):
-            await save_session_preferences(session.room_name, session.user_id, preferences)
+            print(f"[SESSION_MANAGER] Session complete callback triggered for {session.room_name}")
+            try:
+                await save_session_preferences(session.room_name, session.user_id, preferences)
+                print(f"[SESSION_MANAGER] Preferences saved successfully for {session.room_name}")
+            except Exception as e:
+                print(f"[SESSION_MANAGER] Failed to save preferences: {e}")
+            # ALWAYS send WebSocket notification, even if save fails
+            print(f"[SESSION_MANAGER] Sending session_complete WebSocket notification for {session.room_name}")
             await on_complete(preferences)
 
         # Run the bot

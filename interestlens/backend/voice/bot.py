@@ -168,11 +168,20 @@ class OnboardingAgent:
             # Notify transcription callback (user speech)
             await self._notify_transcription(message, "user")
 
+            # Transition from opening to exploring after first user message
+            if self.state.phase == "opening":
+                self.state.phase = "exploring"
+                print(f"[BOT] Transitioned from opening to exploring phase")
+
             # Check for end intent
-            if detect_end_intent(message, self.state.phase):
+            end_detected = detect_end_intent(message, self.state.phase)
+            print(f"[BOT] Phase: {self.state.phase}, Message: '{message}', End intent detected: {end_detected}")
+
+            if end_detected:
                 if self.state.phase == "exploring":
                     # Transition to confirmation
                     self.state.phase = "confirming"
+                    print(f"[BOT] Transitioning to confirming phase")
                     response = await self._generate_confirmation()
                 elif self.state.phase == "confirming":
                     # User confirmed, end conversation
