@@ -226,6 +226,7 @@ Return only the category names as a JSON array, e.g., ["politics", "economics"]"
         return ["other"]
 
     topics = extract_json_from_response(response, default=[])
+    print(f"[CLASSIFY_TOPICS] Raw response: {topics}")
 
     # Validate and filter topics
     if not isinstance(topics, list):
@@ -233,6 +234,7 @@ Return only the category names as a JSON array, e.g., ["politics", "economics"]"
         return ["other"]
 
     valid_topics = [t for t in topics if isinstance(t, str) and t in TOPIC_CATEGORIES]
+    print(f"[CLASSIFY_TOPICS] Valid topics after filter: {valid_topics} (from {topics})")
 
     if not valid_topics:
         return ["other"]
