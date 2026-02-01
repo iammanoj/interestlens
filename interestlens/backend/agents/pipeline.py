@@ -428,6 +428,9 @@ async def analyze_page_pipeline(
         items
     )
 
+    print("Extractor result PageType:", extractor_result.get("page_type", "other"))
+    print("Number of items classified:", len(extractor_result.get("items", [])))
+
     # Agent 2: Score items
     scored_items = await scorer_agent(
         items,
@@ -461,6 +464,9 @@ async def analyze_page_pipeline(
             run_authenticity_checks(items_for_auth, max_concurrent=3)
         )
 
+        print("Explained items count:", len(explained_items))
+        print("Authenticity results count:", len(authenticity_results))
+
         # Merge authenticity results into explained items
         for item in explained_items:
             if item.id in authenticity_results:
@@ -485,7 +491,7 @@ async def analyze_page_pipeline(
 
     return AnalyzePageResponse(
         items=explained_items,
-        page_topics=page_topics,
+        page_topics=[extractor_result.get("page_type", "other")],
         profile_summary=profile_summary,
         weave_trace_url=weave.get_current_trace_url() if hasattr(weave, 'get_current_trace_url') else None
     )
