@@ -64,6 +64,9 @@ async def start_voice_session(user: Optional[dict] = Depends(get_optional_user))
         )
 
         if room_response.status_code != 200:
+            print(f"Daily room creation failed: {room_response.status_code} - {room_response.text}")
+
+        if room_response.status_code != 200:
             raise HTTPException(
                 status_code=500,
                 detail="Failed to create Daily room"

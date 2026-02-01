@@ -4,13 +4,16 @@ Pipeline: Daily Audio In -> Google STT -> OnboardingAgent -> Google TTS -> Daily
 """
 
 import os
+import sys
 import asyncio
 from typing import Optional, Callable
+from loguru import logger
 
 from pipecat.frames.frames import (
     Frame,
     TextFrame,
     TranscriptionFrame,
+    InterimTranscriptionFrame,
     EndFrame,
     LLMMessagesFrame
 )
@@ -18,8 +21,10 @@ from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.task import PipelineTask, PipelineParams
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.processors.frame_processor import FrameProcessor, FrameDirection
-from pipecat.services.openai import OpenAITTSService
-from pipecat.transports.services.daily import DailyParams, DailyTransport
+from pipecat.services.openai.tts import OpenAITTSService
+from pipecat.services.openai.stt import OpenAISTTService
+from pipecat.transports.daily.transport import DailyParams, DailyTransport
+from pipecat.audio.vad.silero import SileroVADAnalyzer
 
 from voice.bot import OnboardingAgent
 from models.profile import VoicePreferences
@@ -47,9 +52,27 @@ class OnboardingProcessor(FrameProcessor):
         """Process incoming frames."""
         await super().process_frame(frame, direction)
 
+        # Debug: log all incoming frames
+        frame_type = type(frame).__name__
+        if frame_type not in ["AudioRawFrame", "StartFrame", "StartInterruptionFrame", "StopInterruptionFrame"]:
+            logger.info(f"[PIPELINE] Received frame: {frame_type}")
+            sys.stdout.flush()
+
         if isinstance(frame, TranscriptionFrame):
-            # User speech transcribed
+            # User speech transcribed (final)
+            logger.info(f"[TRANSCRIPTION FINAL] Text: '{frame.text}' User: {getattr(frame, 'user_id', 'unknown')}")
+            sys.stdout.flush()
             if frame.text and frame.text.strip():
+                # Send user transcription to WebSocket
+                if self.on_transcription:
+                    try:
+                        if asyncio.iscoroutinefunction(self.on_transcription):
+                            await self.on_transcription(frame.text, "user")
+                        else:
+                            self.on_transcription(frame.text, "user")
+                    except Exception as e:
+                        print(f"Transcription callback error: {e}")
+
                 # Process through agent
                 response = await self.agent.process_user_message(frame.text)
 
@@ -59,6 +82,13 @@ class OnboardingProcessor(FrameProcessor):
                 # Check if conversation is complete
                 if self.agent.state.is_complete:
                     await self.push_frame(EndFrame())
+
+        elif isinstance(frame, InterimTranscriptionFrame):
+            # Interim/partial transcription - log for debugging
+            logger.info(f"[TRANSCRIPTION INTERIM] Text: '{frame.text}' User: {getattr(frame, 'user_id', 'unknown')}")
+            sys.stdout.flush()
+            # Pass through but don't process
+            await self.push_frame(frame, direction)
 
         elif isinstance(frame, EndFrame):
             # Pass through end frames
@@ -118,7 +148,7 @@ async def create_voice_pipeline(
         on_transcription=on_transcription
     )
 
-    # Daily transport configuration
+    # Daily transport configuration - disable built-in transcription, use OpenAI STT instead
     transport = DailyTransport(
         room_url=room_url,
         token=room_token,
@@ -126,10 +156,14 @@ async def create_voice_pipeline(
         params=DailyParams(
             audio_in_enabled=True,
             audio_out_enabled=True,
-            vad_enabled=True,
-            vad_audio_passthrough=True,
-            transcription_enabled=True,  # Use Daily's transcription
+            vad_analyzer=SileroVADAnalyzer(),  # Use Silero VAD for speech detection
+            transcription_enabled=False,  # Disable Daily's transcription - using OpenAI STT
         )
+    )
+
+    # OpenAI STT for speech-to-text (Whisper)
+    stt = OpenAISTTService(
+        api_key=os.getenv("OPENAI_API_KEY"),
     )
 
     # OpenAI TTS for speech synthesis
@@ -146,9 +180,10 @@ async def create_voice_pipeline(
     )
 
     # Build pipeline
-    # Flow: Transport (audio in) -> Processor (handles transcription) -> TTS -> Transport (audio out)
+    # Flow: Transport (audio in) -> STT (transcription) -> Processor -> TTS -> Transport (audio out)
     pipeline = Pipeline([
-        transport.input(),   # Audio input with VAD and transcription
+        transport.input(),   # Audio input with VAD
+        stt,                 # OpenAI Whisper STT for transcription
         processor,           # Onboarding agent logic
         tts,                 # Text to speech
         transport.output()   # Audio output
@@ -160,6 +195,7 @@ async def create_voice_pipeline(
         params=PipelineParams(
             allow_interruptions=True,
             enable_metrics=True,
+            idle_timeout_seconds=120,  # 2 minutes before idle timeout
         )
     )
 
@@ -170,13 +206,14 @@ async def create_voice_pipeline(
     @transport.event_handler("on_joined")
     async def on_joined(transport, data):
         """Handle bot joining the room."""
-        print(f"Bot joined room: {room_name}")
+        logger.info(f"Bot joined room: {room_name}")
+        sys.stdout.flush()
         # Start the conversation after a short delay
         await asyncio.sleep(1)
         await processor.start_conversation()
 
     @transport.event_handler("on_left")
-    async def on_left(transport, data):
+    async def on_left(transport, data=None):
         """Handle bot leaving the room."""
         print(f"Bot left room: {room_name}")
         # Force end if not already complete
@@ -191,6 +228,54 @@ async def create_voice_pipeline(
         if not agent.state.is_complete:
             await agent.force_end()
             await task.cancel()
+
+    @transport.event_handler("on_participant_joined")
+    async def on_participant_joined(transport, participant):
+        """Handle participant joining."""
+        logger.warning(f"[DAILY EVENT] *** PARTICIPANT JOINED ***: {participant}")
+        sys.stdout.flush()
+
+    @transport.event_handler("on_first_participant_joined")
+    async def on_first_participant_joined(transport, participant):
+        """Handle first participant joining."""
+        logger.warning(f"[DAILY EVENT] *** FIRST PARTICIPANT JOINED ***: {participant}")
+        sys.stdout.flush()
+
+    @transport.event_handler("on_participant_updated")
+    async def on_participant_updated(transport, participant):
+        """Handle participant updated."""
+        logger.info(f"[DAILY EVENT] Participant updated: {participant}")
+        sys.stdout.flush()
+
+    @transport.event_handler("on_active_speaker_changed")
+    async def on_active_speaker_changed(transport, participant):
+        """Handle active speaker changed."""
+        logger.warning(f"[DAILY EVENT] *** ACTIVE SPEAKER CHANGED ***: {participant}")
+        sys.stdout.flush()
+
+    @transport.event_handler("on_transcription_message")
+    async def on_transcription_message(transport, message):
+        """Debug: Handle transcription messages from Daily."""
+        logger.warning(f"[DAILY EVENT] *** TRANSCRIPTION MESSAGE ***: {message}")
+        sys.stdout.flush()
+        # Extract useful info
+        text = message.get("text", "")
+        participant_id = message.get("participantId", message.get("participant_id", "unknown"))
+        is_final = message.get("is_final", message.get("isFinal", True))
+        logger.warning(f"[TRANSCRIPTION] Text: '{text}' | Participant: {participant_id} | Final: {is_final}")
+        sys.stdout.flush()
+
+    @transport.event_handler("on_app_message")
+    async def on_app_message(transport, message, sender):
+        """Handle app messages."""
+        logger.info(f"[DAILY EVENT] App message from {sender}: {message}")
+        sys.stdout.flush()
+
+    @transport.event_handler("on_error")
+    async def on_error(transport, error):
+        """Handle Daily errors."""
+        logger.error(f"[DAILY ERROR] {error}")
+        sys.stdout.flush()
 
     return runner, task, agent
 
@@ -239,7 +324,7 @@ async def run_voice_bot(
         print(f"Voice bot session ended for room: {room_name}")
 
 
-# Alternative: Use Google Speech-to-Text directly instead of Daily's transcription
+# Alternative: Use Deepgram Speech-to-Text directly instead of Daily's transcription
 async def create_voice_pipeline_with_stt(
     room_url: str,
     room_token: str,
@@ -250,10 +335,10 @@ async def create_voice_pipeline_with_stt(
     on_transcription: Optional[Callable[[str, str], None]] = None
 ) -> tuple[PipelineRunner, PipelineTask]:
     """
-    Alternative pipeline using Google STT for transcription.
+    Alternative pipeline using Deepgram STT for transcription.
     Use this if Daily's built-in transcription is not available.
     """
-    from pipecat.services.google import GoogleSTTService
+    from pipecat.services.deepgram import DeepgramSTTService
 
     agent = OnboardingAgent(
         user_id=user_id,
@@ -272,17 +357,13 @@ async def create_voice_pipeline_with_stt(
             audio_out_enabled=True,
             vad_enabled=True,
             vad_audio_passthrough=True,
-            transcription_enabled=False,  # We'll use Google STT
+            transcription_enabled=False,  # We'll use Deepgram STT
         )
     )
 
-    # Google Speech-to-Text
-    stt = GoogleSTTService(
-        api_key=os.getenv("GOOGLE_API_KEY"),
-        params={
-            "language_code": "en-US",
-            "model": "latest_long",
-        }
+    # Deepgram Speech-to-Text
+    stt = DeepgramSTTService(
+        api_key=os.getenv("DEEPGRAM_API_KEY"),
     )
 
     tts = OpenAITTSService(
@@ -292,12 +373,13 @@ async def create_voice_pipeline_with_stt(
 
     processor = OnboardingProcessor(
         agent=agent,
-        on_preferences_update=on_preferences_update
+        on_preferences_update=on_preferences_update,
+        on_transcription=on_transcription
     )
 
     pipeline = Pipeline([
         transport.input(),
-        stt,                 # Google STT for transcription
+        stt,                 # Deepgram STT for transcription
         processor,
         tts,
         transport.output()
