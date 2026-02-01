@@ -235,3 +235,72 @@ async def get_pending_authenticity_checks() -> List[str]:
         return []
     keys = await r.keys("authenticity:pending:*")
     return [k.split(":")[-1] for k in keys]
+
+
+# Article content caching functions
+
+async def cache_article_content(url: str, content: dict, ttl: int = 3600):
+    """
+    Cache article content extracted from a URL.
+
+    Args:
+        url: The article URL (used as cache key)
+        content: Article content dict (title, full_text, author, etc.)
+        ttl: Time to live in seconds (default 1 hour)
+    """
+    r = await get_redis()
+    if not r:
+        return
+    # Use hash of URL to handle long URLs
+    import hashlib
+    url_hash = hashlib.md5(url.encode()).hexdigest()
+    key = f"article:{url_hash}"
+
+    # Store with original URL for debugging
+    content["_cached_url"] = url
+    await r.setex(key, ttl, json.dumps(content))
+    print(f"[CACHE] Stored article content for: {url[:50]}...")
+
+
+async def get_cached_article_content(url: str) -> Optional[dict]:
+    """
+    Get cached article content for a URL.
+
+    Args:
+        url: The article URL
+
+    Returns:
+        Cached article content dict or None if not cached
+    """
+    r = await get_redis()
+    if not r:
+        return None
+
+    import hashlib
+    url_hash = hashlib.md5(url.encode()).hexdigest()
+    key = f"article:{url_hash}"
+
+    try:
+        data = await r.get(key)
+        if data:
+            print(f"[CACHE HIT] Found cached article for: {url[:50]}...")
+            return json.loads(data)
+        return None
+    except Exception:
+        return None
+
+
+async def get_article_cache_stats() -> dict:
+    """Get statistics about the article cache."""
+    r = await get_redis()
+    if not r:
+        return {"available": False}
+
+    try:
+        keys = await r.keys("article:*")
+        return {
+            "available": True,
+            "cached_articles": len(keys)
+        }
+    except Exception:
+        return {"available": True, "cached_articles": 0}

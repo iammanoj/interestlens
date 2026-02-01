@@ -103,7 +103,7 @@ async def create_bot_token(room_name: str) -> Optional[str]:
                     "room_name": room_name,
                     "user_id": "onboarding-bot",
                     "user_name": "InterestLens Assistant",
-                    "is_owner": False,
+                    "is_owner": True,  # Required for transcription
                     "enable_recording": False,
                 }
             }

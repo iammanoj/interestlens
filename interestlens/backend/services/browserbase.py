@@ -13,6 +13,7 @@ import httpx
 
 from models.authenticity import ArticleContent, CrossReferenceResult
 from services.weave_utils import trace_news_search, log_metric
+from services.redis_client import get_cached_article_content, cache_article_content
 
 BROWSERBASE_API_URL = "https://www.browserbase.com/v1"
 BROWSERBASE_API_KEY = os.getenv("BROWSERBASE_API_KEY")
@@ -74,11 +75,30 @@ async def close_browser_session(session_id: str) -> None:
 
 
 @weave.op()
-async def extract_article_content(url: str) -> Optional[ArticleContent]:
+async def extract_article_content(url: str, use_cache: bool = True) -> Optional[ArticleContent]:
     """
     Extract full article content from a URL using Browserbase.
     Returns structured ArticleContent or None if extraction fails.
+
+    Args:
+        url: The article URL to extract content from
+        use_cache: Whether to check/use Redis cache (default True)
     """
+    # Check cache first
+    if use_cache:
+        cached = await get_cached_article_content(url)
+        if cached:
+            return ArticleContent(
+                url=cached.get("url", url),
+                title=cached.get("title", ""),
+                author=cached.get("author"),
+                publication_date=cached.get("publication_date"),
+                source_domain=cached.get("source_domain", ""),
+                source_name=cached.get("source_name"),
+                full_text=cached.get("full_text", ""),
+                excerpt=cached.get("excerpt", "")
+            )
+
     session_id = None
     try:
         print(f"[BROWSERBASE] Creating session for: {url}")
@@ -189,7 +209,7 @@ async def extract_article_content(url: str) -> Optional[ArticleContent]:
 
             full_text = result.get("text", "")
 
-            return ArticleContent(
+            article = ArticleContent(
                 url=url,
                 title=result.get("title", ""),
                 author=result.get("author"),
@@ -199,6 +219,21 @@ async def extract_article_content(url: str) -> Optional[ArticleContent]:
                 full_text=full_text,
                 excerpt=full_text[:500] if full_text else ""
             )
+
+            # Cache the extracted content
+            if use_cache and full_text:
+                await cache_article_content(url, {
+                    "url": article.url,
+                    "title": article.title,
+                    "author": article.author,
+                    "publication_date": article.publication_date,
+                    "source_domain": article.source_domain,
+                    "source_name": article.source_name,
+                    "full_text": article.full_text,
+                    "excerpt": article.excerpt
+                })
+
+            return article
 
     except Exception as e:
         print(f"[BROWSERBASE ERROR] Error extracting article: {e}")

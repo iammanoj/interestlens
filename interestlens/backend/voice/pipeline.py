@@ -18,7 +18,7 @@ from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.task import PipelineTask, PipelineParams
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.processors.frame_processor import FrameProcessor, FrameDirection
-from pipecat.services.google import GoogleLLMService, GoogleTTSService
+from pipecat.services.openai import OpenAITTSService
 from pipecat.transports.services.daily import DailyParams, DailyTransport
 
 from voice.bot import OnboardingAgent
@@ -34,11 +34,13 @@ class OnboardingProcessor(FrameProcessor):
     def __init__(
         self,
         agent: OnboardingAgent,
-        on_preferences_update: Optional[Callable[[VoicePreferences], None]] = None
+        on_preferences_update: Optional[Callable[[VoicePreferences], None]] = None,
+        on_transcription: Optional[Callable[[str, str], None]] = None
     ):
         super().__init__()
         self.agent = agent
         self.on_preferences_update = on_preferences_update
+        self.on_transcription = on_transcription
         self._started = False
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
@@ -72,6 +74,15 @@ class OnboardingProcessor(FrameProcessor):
             self._started = True
             opening = self.agent.get_opening_message()
             await self.push_frame(TextFrame(text=opening))
+            # Send transcription for opening message
+            if self.on_transcription:
+                try:
+                    if asyncio.iscoroutinefunction(self.on_transcription):
+                        await self.on_transcription(opening, "assistant")
+                    else:
+                        self.on_transcription(opening, "assistant")
+                except Exception as e:
+                    print(f"Opening transcription callback error: {e}")
 
 
 async def create_voice_pipeline(
@@ -121,16 +132,17 @@ async def create_voice_pipeline(
         )
     )
 
-    # Google TTS for speech synthesis
-    tts = GoogleTTSService(
-        api_key=os.getenv("GOOGLE_API_KEY"),
-        voice_id="en-US-Neural2-C",  # Friendly female voice
+    # OpenAI TTS for speech synthesis
+    tts = OpenAITTSService(
+        api_key=os.getenv("OPENAI_API_KEY"),
+        voice="nova",  # Friendly female voice
     )
 
     # Create the onboarding processor
     processor = OnboardingProcessor(
         agent=agent,
-        on_preferences_update=on_preferences_update
+        on_preferences_update=on_preferences_update,
+        on_transcription=on_transcription
     )
 
     # Build pipeline
@@ -273,9 +285,9 @@ async def create_voice_pipeline_with_stt(
         }
     )
 
-    tts = GoogleTTSService(
-        api_key=os.getenv("GOOGLE_API_KEY"),
-        voice_id="en-US-Neural2-C",
+    tts = OpenAITTSService(
+        api_key=os.getenv("OPENAI_API_KEY"),
+        voice="nova",
     )
 
     processor = OnboardingProcessor(
