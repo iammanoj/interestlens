@@ -72,6 +72,7 @@ async function extractAndAnalyze() {
 
     if (items.length === 0) {
       console.log('InterestLens: No items found on page');
+      isAnalyzing = false;  // Reset flag before returning!
       return;
     }
 
@@ -240,13 +241,21 @@ async function handleItemClick(item: ScoredItem) {
 }
 
 // Re-analyze when page content changes significantly
+let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
 const observer = new MutationObserver((mutations) => {
   const hasSignificantChanges = mutations.some(
     (m) => m.addedNodes.length > 5 || m.removedNodes.length > 5
   );
   if (hasSignificantChanges) {
-    // Debounce re-analysis
-    setTimeout(extractAndAnalyze, 1000);
+    // Clear existing timer and set new one (proper debounce)
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+    }
+    debounceTimer = setTimeout(() => {
+      debounceTimer = null;
+      extractAndAnalyze();
+    }, 1000);
   }
 });
 

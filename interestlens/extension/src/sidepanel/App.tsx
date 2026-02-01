@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import type { AuthState, ScoredItem } from '../shared/types';
 
 interface ProfileSummary {
@@ -34,6 +34,7 @@ export default function App() {
   });
   const [showVoicePanel, setShowVoicePanel] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<number>(Date.now());
+  const voiceWsRef = useRef<WebSocket | null>(null);
 
   // Function to request page analysis
   const requestAnalysis = useCallback(async () => {
@@ -110,6 +111,11 @@ export default function App() {
     return () => {
       chrome.runtime.onMessage.removeListener(messageListener);
       preferencesChannel?.close();
+      // Clean up WebSocket on unmount
+      if (voiceWsRef.current) {
+        voiceWsRef.current.close();
+        voiceWsRef.current = null;
+      }
     };
   }, [requestAnalysis]);
 
@@ -193,13 +199,24 @@ export default function App() {
 
   // Connect to voice session WebSocket for real-time transcripts
   const connectToVoiceWebSocket = (wsPath: string) => {
+    // Close existing WebSocket if any
+    if (voiceWsRef.current) {
+      voiceWsRef.current.close();
+      voiceWsRef.current = null;
+    }
+
     const wsUrl = `${API_BASE.replace('http', 'ws')}${wsPath}`;
     console.log('[Sidepanel] Connecting to WebSocket:', wsUrl);
 
     const ws = new WebSocket(wsUrl);
+    voiceWsRef.current = ws;
+
+    let reconnectAttempts = 0;
+    const maxReconnectAttempts = 3;
 
     ws.onopen = () => {
       console.log('[Sidepanel] WebSocket connected');
+      reconnectAttempts = 0;  // Reset on successful connection
     };
 
     ws.onmessage = (event) => {
@@ -249,8 +266,19 @@ export default function App() {
       console.error('[Sidepanel] WebSocket error:', error);
     };
 
-    ws.onclose = () => {
-      console.log('[Sidepanel] WebSocket closed');
+    ws.onclose = (event) => {
+      console.log('[Sidepanel] WebSocket closed, code:', event.code);
+      voiceWsRef.current = null;
+
+      // Attempt reconnection if session is still active and not complete
+      setVoiceSession(prev => {
+        if (prev.isActive && prev.status === 'listening' && reconnectAttempts < maxReconnectAttempts) {
+          reconnectAttempts++;
+          console.log(`[Sidepanel] Attempting reconnect ${reconnectAttempts}/${maxReconnectAttempts}`);
+          setTimeout(() => connectToVoiceWebSocket(wsPath), 1000 * reconnectAttempts);
+        }
+        return prev;
+      });
     };
   };
 

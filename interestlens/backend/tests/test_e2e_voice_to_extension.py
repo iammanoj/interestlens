@@ -10,10 +10,12 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import pytest
 from dotenv import load_dotenv
 load_dotenv()
 
 
+@pytest.mark.asyncio
 async def test_complete_flow():
     from services.redis_client import init_redis, get_redis, json_get
     from services.profile import get_user_profile, save_user_profile
