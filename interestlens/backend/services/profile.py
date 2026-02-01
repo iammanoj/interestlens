@@ -27,10 +27,12 @@ async def update_user_profile(user_id: str, event_type: str, item_data: dict):
     """
     Update user profile based on an interaction event.
     Uses EMA (Exponential Moving Average) for embeddings.
+    Creates a new profile if one doesn't exist.
     """
     profile = await get_user_profile(user_id)
     if not profile:
-        return
+        # Create a new profile for this user
+        profile = UserProfile(user_id=user_id)
 
     alpha = 0.85  # Decay factor for EMA
 
