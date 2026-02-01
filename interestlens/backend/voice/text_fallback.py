@@ -26,6 +26,7 @@ class TextMessageResponse(BaseModel):
     preferences_detected: Dict
     is_complete: bool
     session_id: str
+    preferences: Optional[VoicePreferences] = None  # Full preferences object
 
 
 # In-memory text session storage
@@ -54,10 +55,11 @@ async def get_or_create_text_session(
             async def on_update(preferences: VoicePreferences):
                 await ws_manager.send_preference_update(session_id, preferences)
 
-            # Create new agent
+            # Create new agent with session_id for Redis storage
             agent = OnboardingAgent(
                 user_id=user_id,
                 room_name=session_id,  # Use session_id as room_name for consistency
+                session_id=session_id,  # Pass session_id for Redis transcription storage
                 on_preferences_update=on_update
             )
             _text_sessions[session_id] = agent
@@ -110,7 +112,8 @@ async def handle_text_message(
         response=response,
         preferences_detected=preferences.model_dump(),
         is_complete=is_complete,
-        session_id=session_id
+        session_id=session_id,
+        preferences=preferences
     )
 
 

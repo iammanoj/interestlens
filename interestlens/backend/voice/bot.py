@@ -10,12 +10,22 @@ from dataclasses import dataclass, field
 
 import google.generativeai as genai
 
-from models.profile import VoicePreferences
+from models.profile import VoicePreferences, ExtractedCategories
 from voice.extraction import (
     extract_preferences_from_message,
     merge_preferences,
     preferences_to_summary,
     extract_final_preferences
+)
+from voice.category_extraction import (
+    extract_categories_incremental,
+    categories_to_dict,
+    dict_to_categories
+)
+from services.redis_client import (
+    save_transcription_message,
+    get_transcription_history,
+    update_extracted_categories
 )
 
 # Configure Gemini
@@ -32,10 +42,12 @@ class ConversationState:
     phase: str = "opening"  # opening, exploring, confirming, closing
     conversation_history: List[Dict[str, str]] = field(default_factory=list)
     extracted_preferences: VoicePreferences = field(default_factory=VoicePreferences)
+    extracted_categories: ExtractedCategories = field(default_factory=ExtractedCategories)
     turn_count: int = 0
     last_activity_time: float = 0.0
     user_id: str = ""
     room_name: str = ""
+    session_id: str = ""  # Session ID for Redis storage
     is_complete: bool = False
 
 
@@ -117,6 +129,7 @@ class OnboardingAgent:
         self,
         user_id: str,
         room_name: str,
+        session_id: Optional[str] = None,
         on_preferences_update: Optional[Callable[[VoicePreferences], None]] = None,
         on_session_complete: Optional[Callable[[VoicePreferences], None]] = None,
         on_transcription: Optional[Callable[[str, str], None]] = None
@@ -127,13 +140,15 @@ class OnboardingAgent:
         Args:
             user_id: The user's ID for saving preferences
             room_name: The Daily room name for this session
+            session_id: Session ID for Redis storage (defaults to room_name)
             on_preferences_update: Callback when preferences are updated (for WebSocket)
             on_session_complete: Callback when session is complete
             on_transcription: Callback for real-time transcription (text, speaker)
         """
         self.state = ConversationState(
             user_id=user_id,
-            room_name=room_name
+            room_name=room_name,
+            session_id=session_id or room_name
         )
         self.on_preferences_update = on_preferences_update
         self.on_session_complete = on_session_complete
@@ -168,6 +183,9 @@ class OnboardingAgent:
             if len(self.state.conversation_history) > MAX_CONVERSATION_HISTORY:
                 self.state.conversation_history = self.state.conversation_history[-MAX_CONVERSATION_HISTORY:]
 
+            # Save user message to Redis (permanent storage)
+            asyncio.create_task(self._save_transcription(message, "user"))
+
             # Notify transcription callback (user speech)
             await self._notify_transcription(message, "user")
 
@@ -192,7 +210,7 @@ class OnboardingAgent:
                 else:
                     response = await self._generate_response(message)
             else:
-                # Extract preferences from this message (async, non-blocking)
+                # Extract preferences and categories from this message (async, non-blocking)
                 asyncio.create_task(self._extract_and_update(message))
 
                 # Generate conversational response
@@ -209,13 +227,28 @@ class OnboardingAgent:
                 "content": response
             })
 
+            # Save assistant response to Redis (permanent storage)
+            asyncio.create_task(self._save_transcription(response, "assistant"))
+
             # Notify transcription callback (assistant response)
             await self._notify_transcription(response, "assistant")
 
             return response
 
+    async def _save_transcription(self, content: str, role: str):
+        """Save a transcription message to Redis."""
+        try:
+            await save_transcription_message(
+                user_id=self.state.user_id,
+                session_id=self.state.session_id,
+                role=role,
+                content=content
+            )
+        except Exception as e:
+            print(f"Transcription save error: {e}")
+
     async def _extract_and_update(self, message: str):
-        """Extract preferences from message and update state."""
+        """Extract preferences and categories from message and update state."""
         try:
             # Build context from recent history
             recent = self.state.conversation_history[-6:]  # Last 3 exchanges
@@ -224,14 +257,32 @@ class OnboardingAgent:
                 for m in recent
             )
 
-            # Extract
+            # Extract preferences (existing logic)
             extraction = await extract_preferences_from_message(message, context)
 
-            # Merge
+            # Merge preferences
             self.state.extracted_preferences = merge_preferences(
                 self.state.extracted_preferences,
                 extraction
             )
+
+            # Extract categories incrementally (new logic)
+            try:
+                updated_categories = await extract_categories_incremental(
+                    message=message,
+                    context=context,
+                    existing_categories=self.state.extracted_categories
+                )
+                self.state.extracted_categories = updated_categories
+
+                # Save updated categories to Redis
+                await update_extracted_categories(
+                    user_id=self.state.user_id,
+                    session_id=self.state.session_id,
+                    categories=categories_to_dict(updated_categories)
+                )
+            except Exception as e:
+                print(f"Category extraction error: {e}")
 
             # Notify via callback
             if self.on_preferences_update:
@@ -314,6 +365,10 @@ class OnboardingAgent:
         """Get the current extracted preferences."""
         return self.state.extracted_preferences
 
+    def get_extracted_categories(self) -> ExtractedCategories:
+        """Get the current extracted categories."""
+        return self.state.extracted_categories
+
     def get_state(self) -> Dict:
         """Get the current conversation state for status endpoint."""
         return {
@@ -321,7 +376,8 @@ class OnboardingAgent:
             "turn_count": self.state.turn_count,
             "is_complete": self.state.is_complete,
             "topics_count": len(self.state.extracted_preferences.topics),
-            "preferences": self.state.extracted_preferences.model_dump()
+            "preferences": self.state.extracted_preferences.model_dump(),
+            "extracted_categories": categories_to_dict(self.state.extracted_categories)
         }
 
     async def force_end(self) -> VoicePreferences:

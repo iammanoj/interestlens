@@ -11,8 +11,18 @@ from typing import Dict, Optional
 from dataclasses import dataclass, asdict
 import httpx
 
-from services.redis_client import get_redis, json_get, json_set, json_set_field
-from models.profile import VoicePreferences
+from services.redis_client import (
+    get_redis, json_get, json_set, json_set_field,
+    get_transcription_history, update_extracted_categories,
+    mark_final_extraction_complete
+)
+from models.profile import VoicePreferences, ExtractedCategories
+from voice.category_extraction import (
+    extract_categories_comprehensive,
+    merge_category_extractions,
+    categories_to_dict,
+    dict_to_categories
+)
 
 
 DAILY_API_KEY = os.getenv("DAILY_API_KEY")
@@ -179,7 +189,10 @@ async def run_bot_process(session: SessionInfo):
 
 
 async def save_session_preferences(room_name: str, user_id: str, preferences: VoicePreferences):
-    """Save extracted preferences to user profile via the save-preferences endpoint logic."""
+    """
+    Save extracted preferences to user profile.
+    Also performs comprehensive category extraction at session end.
+    """
     redis = await get_redis()
     if not redis:
         return
@@ -194,6 +207,45 @@ async def save_session_preferences(room_name: str, user_id: str, preferences: Vo
         return
 
     profile = UserProfile(**profile_data)
+
+    # Get transcription history and perform comprehensive extraction
+    session_id = room_name  # room_name is used as session_id
+    transcription_data = await get_transcription_history(user_id, session_id)
+
+    extracted_categories = ExtractedCategories()
+    if transcription_data and transcription_data.get("messages"):
+        try:
+            # Perform comprehensive extraction on full transcript
+            comprehensive_categories = await extract_categories_comprehensive(
+                transcription_data["messages"]
+            )
+
+            # Get existing incremental categories
+            existing_categories_data = transcription_data.get("extracted_categories", {})
+            if existing_categories_data.get("likes") or existing_categories_data.get("dislikes"):
+                existing_categories = dict_to_categories(existing_categories_data)
+                # Merge incremental and comprehensive extractions
+                extracted_categories = merge_category_extractions(
+                    existing_categories,
+                    comprehensive_categories
+                )
+            else:
+                extracted_categories = comprehensive_categories
+
+            # Update Redis with final merged categories
+            await update_extracted_categories(
+                user_id=user_id,
+                session_id=session_id,
+                categories=categories_to_dict(extracted_categories)
+            )
+
+            # Mark final extraction as complete
+            await mark_final_extraction_complete(user_id, session_id)
+
+            print(f"Comprehensive extraction complete: {len(extracted_categories.likes)} likes, {len(extracted_categories.dislikes)} dislikes")
+
+        except Exception as e:
+            print(f"Comprehensive extraction error: {e}")
 
     # Apply voice preferences to topic affinities
     for topic_pref in preferences.topics:
@@ -211,11 +263,28 @@ async def save_session_preferences(room_name: str, user_id: str, preferences: Vo
         for avoid in topic_pref.avoid_subtopics:
             profile.topic_affinity[avoid] = -abs(weight) * 0.5
 
+    # Also apply extracted categories to topic affinities
+    for like in extracted_categories.likes:
+        current = profile.topic_affinity.get(like.category, 0.0)
+        # Use intensity as weight, max with existing
+        profile.topic_affinity[like.category] = max(current, like.intensity)
+        # Add subtopics
+        for subtopic in like.subtopics:
+            profile.topic_affinity[subtopic] = like.intensity * 0.8
+
+    for dislike in extracted_categories.dislikes:
+        current = profile.topic_affinity.get(dislike.category, 0.0)
+        # Use negative intensity as weight, min with existing
+        profile.topic_affinity[dislike.category] = min(current, -dislike.intensity)
+        # Add subtopics
+        for subtopic in dislike.subtopics:
+            profile.topic_affinity[subtopic] = -dislike.intensity * 0.8
+
     profile.voice_onboarding_complete = True
     profile.voice_preferences = preferences
 
     await json_set(profile_key, "$", profile.model_dump())
-    print(f"Saved preferences for user {user_id}: {len(preferences.topics)} topics")
+    print(f"Saved preferences for user {user_id}: {len(preferences.topics)} topics, {len(extracted_categories.likes)} category likes, {len(extracted_categories.dislikes)} category dislikes")
 
 
 async def end_session(room_name: str):

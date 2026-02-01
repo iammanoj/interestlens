@@ -12,6 +12,8 @@ from typing import Optional, Dict
 from fastapi import WebSocket, WebSocketDisconnect
 import httpx
 
+from services.redis_client import save_transcription_message
+
 # Optional: OpenAI Whisper for transcription
 try:
     import openai
@@ -102,6 +104,16 @@ async def process_voice_command(
         "text": transcript
     })
 
+    # Save user transcription to Redis (permanent storage)
+    asyncio.create_task(
+        save_transcription_message(
+            user_id=session.user_id,
+            session_id=session.session_id,
+            role="user",
+            content=transcript
+        )
+    )
+
     # Send transcription back to client
     await websocket.send_json({
         "type": "transcription",
@@ -115,6 +127,16 @@ async def process_voice_command(
             session_id=session.session_id,
             user_id=session.user_id,
             message=transcript
+        )
+
+        # Save agent response to Redis (permanent storage)
+        asyncio.create_task(
+            save_transcription_message(
+                user_id=session.user_id,
+                session_id=session.session_id,
+                role="assistant",
+                content=response.response
+            )
         )
 
         # Send agent response

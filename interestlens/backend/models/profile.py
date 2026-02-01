@@ -13,6 +13,22 @@ class TopicPreference(BaseModel):
     avoid_subtopics: List[str] = []
 
 
+class ExtractedCategory(BaseModel):
+    """A category extracted from voice transcription via Gemini"""
+    category: str  # Must be one of TOPIC_CATEGORIES
+    confidence: float  # 0.0 to 1.0 - how confident the extraction is
+    intensity: float  # 0.0 to 1.0 - how strongly the user feels about it
+    mentions: List[str] = []  # Specific mentions from the transcript
+    subtopics: List[str] = []  # More specific topics within this category
+
+
+class ExtractedCategories(BaseModel):
+    """Categories extracted from voice transcription"""
+    likes: List[ExtractedCategory] = []
+    dislikes: List[ExtractedCategory] = []
+    overall_confidence: float = 0.0  # Overall confidence in the extraction
+
+
 class ContentPreference(BaseModel):
     """Content format preferences"""
     preferred_formats: List[str] = []
