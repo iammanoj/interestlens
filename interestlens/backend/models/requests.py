@@ -39,3 +39,10 @@ class EventRequest(BaseModel):
     timestamp: int
     item_data: ItemData
     duration_ms: Optional[int] = None
+
+
+class TokenRequest(BaseModel):
+    user_id: str
+    email: Optional[str] = None
+    name: Optional[str] = None
+    picture: Optional[str] = None

@@ -11,6 +11,7 @@ import httpx
 from .jwt import create_access_token
 from services.redis_client import get_redis
 from models.profile import UserProfile
+from models.requests import TokenRequest
 
 router = APIRouter()
 
@@ -138,3 +139,23 @@ async def get_current_user_info(request: Request):
 async def logout():
     """Logout - client should clear stored token"""
     return {"status": "ok", "message": "Logged out"}
+
+
+@router.post("/token")
+async def create_token(request: TokenRequest):
+    """Create a JWT token for the given user data"""
+    token_data = {"sub": request.user_id}
+
+    if request.email:
+        token_data["email"] = request.email
+    if request.name:
+        token_data["name"] = request.name
+    if request.picture:
+        token_data["picture"] = request.picture
+
+    access_token = create_access_token(token_data)
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer"
+    }
