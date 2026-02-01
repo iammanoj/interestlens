@@ -41,7 +41,8 @@ TOPIC_CATEGORIES = [
     "finance", "business strategy", "entrepreneurship", "marketing",
     "science", "research", "space", "climate",
     "gaming", "movies/TV", "music", "sports",
-    "health", "productivity", "design", "travel", "food"
+    "health", "productivity", "design", "travel", "food",
+    "politics", "world news", "economics", "law", "education"
 ]
 
 
