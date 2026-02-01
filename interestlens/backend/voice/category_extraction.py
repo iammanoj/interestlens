@@ -20,15 +20,8 @@ extraction_model = genai.GenerativeModel("gemini-2.0-flash")
 # API timeout in seconds
 GEMINI_TIMEOUT = 30.0
 
-# Topic categories (same as in agents/pipeline.py)
-TOPIC_CATEGORIES = [
-    "AI/ML", "programming", "cloud/infrastructure", "cybersecurity",
-    "startups", "developer tools", "open source", "mobile apps",
-    "finance", "business strategy", "entrepreneurship", "marketing",
-    "science", "research", "space", "climate",
-    "gaming", "movies/TV", "music", "sports",
-    "health", "productivity", "design", "travel", "food"
-]
+# Import TOPIC_CATEGORIES from the single source of truth
+from agents.pipeline import TOPIC_CATEGORIES
 
 # Intensity keywords for sentiment analysis
 STRONG_LIKE_KEYWORDS = ["love", "really like", "passionate about", "fascinated by", "obsessed with", "huge fan of"]
