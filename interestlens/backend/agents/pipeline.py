@@ -34,15 +34,28 @@ embedding_model = "models/text-embedding-004"
 # API timeout in seconds
 GEMINI_TIMEOUT = 30.0
 
-# Topic categories
+# Topic categories - comprehensive list covering major content areas
 TOPIC_CATEGORIES = [
+    # Technology
     "AI/ML", "programming", "cloud/infrastructure", "cybersecurity",
     "startups", "developer tools", "open source", "mobile apps",
+    "cryptocurrency", "social media", "hardware",
+    # Business & Finance
     "finance", "business strategy", "entrepreneurship", "marketing",
-    "science", "research", "space", "climate",
-    "gaming", "movies/TV", "music", "sports",
-    "health", "productivity", "design", "travel", "food",
-    "politics", "world news", "economics", "law", "education"
+    "economics", "real estate", "careers",
+    # Science & Environment
+    "science", "research", "space", "climate", "environment", "energy",
+    # News & Politics
+    "politics", "world news", "law", "crime", "military/defense",
+    # Entertainment
+    "gaming", "movies/TV", "music", "sports", "art", "books/literature",
+    # Lifestyle
+    "health", "food", "travel", "fashion", "parenting", "pets/animals",
+    "automotive", "home/garden",
+    # Education & Culture
+    "education", "history", "religion", "philosophy",
+    # Other
+    "productivity", "design"
 ]
 
 
