@@ -108,6 +108,16 @@ class VoiceClient {
           isComplete: data.is_complete,
           preferences: data.preferences
         });
+
+        // If session is complete, notify the extension to refresh all pages
+        if (data.is_complete && data.preferences) {
+          this.notifyExtensionPreferencesUpdated(data.preferences);
+        }
+        break;
+
+      case 'session_complete':
+        console.log('[VoiceClient] Session complete with preferences');
+        this.notifyExtensionPreferencesUpdated(data.preferences);
         break;
 
       case 'error':
@@ -253,6 +263,57 @@ class VoiceClient {
     }
 
     this.isConnected = false;
+  }
+
+  /**
+   * Notify the Chrome extension that preferences have been updated
+   * This triggers all open tabs to refresh their analysis
+   */
+  notifyExtensionPreferencesUpdated(preferences) {
+    console.log('[VoiceClient] Notifying extension of preference update');
+
+    // Method 1: Send via Chrome extension API (if running in extension context)
+    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+      try {
+        chrome.runtime.sendMessage({
+          type: 'VOICE_SESSION_COMPLETE',
+          payload: { preferences }
+        }, (response) => {
+          if (chrome.runtime.lastError) {
+            console.log('[VoiceClient] Extension notification error:', chrome.runtime.lastError);
+          } else {
+            console.log('[VoiceClient] Extension notified successfully');
+          }
+        });
+      } catch (err) {
+        console.log('[VoiceClient] Could not send to extension:', err);
+      }
+    }
+
+    // Method 2: Broadcast via BroadcastChannel (for same-origin pages)
+    try {
+      const channel = new BroadcastChannel('interestlens_preferences');
+      channel.postMessage({
+        type: 'PREFERENCES_UPDATED',
+        preferences,
+        timestamp: Date.now()
+      });
+      channel.close();
+      console.log('[VoiceClient] Broadcast channel message sent');
+    } catch (err) {
+      console.log('[VoiceClient] BroadcastChannel not supported');
+    }
+
+    // Method 3: Store in localStorage and trigger storage event
+    try {
+      localStorage.setItem('interestlens_preferences_updated', JSON.stringify({
+        timestamp: Date.now(),
+        preferences
+      }));
+      console.log('[VoiceClient] Preferences stored in localStorage');
+    } catch (err) {
+      console.log('[VoiceClient] Could not store in localStorage');
+    }
   }
 
   /**

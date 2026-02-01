@@ -10,6 +10,39 @@ const BADGE_CLASS = 'interestlens-badge';
 
 let currentItems: Map<string, { element: HTMLElement; item: PageItem }> = new Map();
 let scoredItems: ScoredItem[] = [];
+let isAnalyzing = false;
+
+// Listen for messages from service worker (for preference updates)
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message.type === 'REFRESH_ANALYSIS') {
+    console.log('InterestLens: Received refresh request - preferences updated');
+    // Re-analyze the page with new preferences
+    extractAndAnalyze();
+    sendResponse({ success: true });
+  }
+  return true;
+});
+
+// Listen for BroadcastChannel messages (cross-tab communication)
+try {
+  const preferencesChannel = new BroadcastChannel('interestlens_preferences');
+  preferencesChannel.onmessage = (event) => {
+    if (event.data.type === 'PREFERENCES_UPDATED') {
+      console.log('InterestLens: Received preferences update via BroadcastChannel');
+      extractAndAnalyze();
+    }
+  };
+} catch (err) {
+  // BroadcastChannel not supported
+}
+
+// Listen for localStorage changes (fallback for cross-tab communication)
+window.addEventListener('storage', (event) => {
+  if (event.key === 'interestlens_preferences_updated' && event.newValue) {
+    console.log('InterestLens: Received preferences update via localStorage');
+    extractAndAnalyze();
+  }
+});
 
 // Initialize on page load
 initialize();
@@ -24,16 +57,25 @@ async function initialize() {
 }
 
 async function extractAndAnalyze() {
-  // Extract items from the page
-  const items = extractPageItems();
-  const domOutline = extractDOMOutline();
-
-  if (items.length === 0) {
-    console.log('InterestLens: No items found on page');
+  // Prevent concurrent analyses
+  if (isAnalyzing) {
+    console.log('InterestLens: Analysis already in progress, skipping');
     return;
   }
 
-  console.log(`InterestLens: Found ${items.length} items`);
+  isAnalyzing = true;
+
+  try {
+    // Extract items from the page
+    const items = extractPageItems();
+    const domOutline = extractDOMOutline();
+
+    if (items.length === 0) {
+      console.log('InterestLens: No items found on page');
+      return;
+    }
+
+    console.log(`InterestLens: Found ${items.length} items, analyzing...`);
 
   // Store items for later reference
   items.forEach((item) => {
@@ -43,25 +85,29 @@ async function extractAndAnalyze() {
     }
   });
 
-  // Send to background for analysis
-  try {
-    const response = await chrome.runtime.sendMessage({
-      type: 'ANALYZE_PAGE',
-      payload: {
-        pageUrl: window.location.href,
-        domOutline,
-        items,
-      },
-    });
+    // Send to background for analysis
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: 'ANALYZE_PAGE',
+        payload: {
+          pageUrl: window.location.href,
+          domOutline,
+          items,
+        },
+      });
 
-    if (response.success) {
-      scoredItems = response.data.items;
-      renderHighlights(scoredItems);
-    } else {
-      console.error('InterestLens: Analysis failed', response.error);
+      if (response.success) {
+        scoredItems = response.data.items;
+        renderHighlights(scoredItems);
+        console.log('InterestLens: Analysis complete, highlights rendered');
+      } else {
+        console.error('InterestLens: Analysis failed', response.error);
+      }
+    } catch (error) {
+      console.error('InterestLens: Error communicating with background', error);
     }
-  } catch (error) {
-    console.error('InterestLens: Error communicating with background', error);
+  } finally {
+    isAnalyzing = false;
   }
 }
 

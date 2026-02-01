@@ -43,11 +43,19 @@
 
   <script>
     document.getElementById('open-panel').addEventListener('click', async () => {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tab.id) {
-        chrome.sidePanel.open({ tabId: tab.id });
+      try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        console.log('Current tab:', tab);
+        if (tab && tab.id) {
+          await chrome.sidePanel.open({ tabId: tab.id });
+          window.close();
+        } else {
+          alert('Could not get current tab. Make sure you are on a regular webpage.');
+        }
+      } catch (error) {
+        console.error('Error opening side panel:', error);
+        alert('Error: ' + error.message);
       }
-      window.close();
     });
   </script>
 </body>

@@ -24,7 +24,7 @@
     {
       "matches": ["<all_urls>"],
       "js": ["src/content/index.ts"],
-      "css": ["src/content/overlay.css"],
+      "css": ["overlay.css"],
       "run_at": "document_idle"
     }
   ],

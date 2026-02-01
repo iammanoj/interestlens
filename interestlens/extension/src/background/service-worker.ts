@@ -31,7 +31,7 @@ chrome.runtime.onMessage.addListener((message: Message, sender, sendResponse) =>
 });
 
 // Listen for messages from web app (login callback)
-chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
+chrome.runtime.onMessageExternal.addListener((message, _sender, sendResponse) => {
   if (message.type === 'AUTH_SUCCESS') {
     handleAuthSuccess(message.payload);
     sendResponse({ success: true });
@@ -40,7 +40,7 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
 
 async function handleMessage(
   message: Message,
-  sender: chrome.runtime.MessageSender,
+  _sender: chrome.runtime.MessageSender,
   sendResponse: (response: any) => void
 ) {
   switch (message.type) {
@@ -51,6 +51,14 @@ async function handleMessage(
           authState.token
         );
         sendResponse({ success: true, data: result });
+
+        // Also broadcast to sidepanel and other listeners
+        chrome.runtime.sendMessage({
+          type: 'ANALYSIS_RESULT',
+          payload: result,
+        }).catch(() => {
+          // Ignore errors if no listeners
+        });
       } catch (error) {
         sendResponse({ success: false, error: String(error) });
       }
@@ -92,8 +100,61 @@ async function handleMessage(
       sendResponse({ success: true });
       break;
 
+    case 'VOICE_SESSION_COMPLETE':
+      // Voice onboarding completed - notify all tabs to refresh
+      handleVoiceSessionComplete(message.payload);
+      sendResponse({ success: true });
+      break;
+
+    case 'PREFERENCES_UPDATED':
+      // Preferences were updated - broadcast to all content scripts
+      broadcastPreferencesUpdated(message.payload);
+      sendResponse({ success: true });
+      break;
+
     default:
       sendResponse({ success: false, error: 'Unknown message type' });
+  }
+}
+
+/**
+ * Handle voice session completion - broadcast refresh to all tabs
+ */
+async function handleVoiceSessionComplete(payload: any) {
+  console.log('[ServiceWorker] Voice session complete, refreshing all tabs');
+
+  // Broadcast to all tabs to refresh their analysis
+  broadcastPreferencesUpdated(payload);
+}
+
+/**
+ * Broadcast preferences update to all tabs
+ */
+async function broadcastPreferencesUpdated(payload: any) {
+  try {
+    // Get all tabs
+    const tabs = await chrome.tabs.query({});
+
+    // Send refresh message to each tab's content script
+    for (const tab of tabs) {
+      if (tab.id && tab.url && !tab.url.startsWith('chrome://')) {
+        try {
+          await chrome.tabs.sendMessage(tab.id, {
+            type: 'REFRESH_ANALYSIS',
+            payload: {
+              reason: 'preferences_updated',
+              preferences: payload?.preferences,
+              timestamp: Date.now()
+            }
+          });
+          console.log(`[ServiceWorker] Sent refresh to tab ${tab.id}: ${tab.url}`);
+        } catch (err) {
+          // Tab might not have content script loaded, ignore
+        }
+      }
+    }
+  } catch (error) {
+    console.error('[ServiceWorker] Error broadcasting preferences update:', error);
   }
 }
 

@@ -25,9 +25,13 @@ from pipecat.services.openai.tts import OpenAITTSService
 from pipecat.services.openai.stt import OpenAISTTService
 from pipecat.transports.daily.transport import DailyParams, DailyTransport
 from pipecat.audio.vad.silero import SileroVADAnalyzer
+from pipecat.audio.vad.vad_analyzer import VADParams
 
 from voice.bot import OnboardingAgent
 from models.profile import VoicePreferences
+
+# Configuration for low-latency mode
+USE_DEEPGRAM_STT = os.getenv("USE_DEEPGRAM_STT", "false").lower() == "true"
 
 
 class OnboardingProcessor(FrameProcessor):
@@ -152,7 +156,7 @@ async def create_voice_pipeline(
     # Daily transport configuration - disable built-in transcription, use OpenAI STT instead
     # Optimized VAD settings for lower latency
     vad = SileroVADAnalyzer(
-        params=SileroVADAnalyzer.VADParams(
+        params=VADParams(
             confidence=0.6,      # Lower threshold = faster detection (default 0.7)
             start_secs=0.1,      # Start speaking detection (default 0.2)
             stop_secs=0.4,       # Reduced from 0.8 - faster end-of-speech detection
@@ -172,11 +176,21 @@ async def create_voice_pipeline(
         )
     )
 
-    # OpenAI STT for speech-to-text (Whisper) - optimized for low latency
-    stt = OpenAISTTService(
-        api_key=os.getenv("OPENAI_API_KEY"),
-        model="whisper-1",  # Fastest Whisper model
-    )
+    # Speech-to-text service - Deepgram is faster for real-time, OpenAI Whisper is more accurate
+    if USE_DEEPGRAM_STT and os.getenv("DEEPGRAM_API_KEY"):
+        from pipecat.services.deepgram import DeepgramSTTService
+        stt = DeepgramSTTService(
+            api_key=os.getenv("DEEPGRAM_API_KEY"),
+            model="nova-2",  # Fastest Deepgram model with good accuracy
+        )
+        logger.info("Using Deepgram STT for lower latency")
+    else:
+        # OpenAI STT for speech-to-text (Whisper) - optimized for low latency
+        stt = OpenAISTTService(
+            api_key=os.getenv("OPENAI_API_KEY"),
+            model="whisper-1",  # Fastest Whisper model
+        )
+        logger.info("Using OpenAI Whisper STT")
 
     # OpenAI TTS for speech synthesis - optimized for streaming
     tts = OpenAITTSService(
@@ -203,13 +217,14 @@ async def create_voice_pipeline(
         transport.output()   # Audio output
     ])
 
-    # Create task
+    # Create task with optimized parameters for low latency
     task = PipelineTask(
         pipeline,
         params=PipelineParams(
-            allow_interruptions=True,
+            allow_interruptions=True,      # Allow user to interrupt bot speech
             enable_metrics=True,
-            idle_timeout_seconds=120,  # 2 minutes before idle timeout
+            enable_usage_metrics=False,    # Disable for lower overhead
+            idle_timeout_seconds=90,       # Reduced idle timeout
         )
     )
 
@@ -222,8 +237,7 @@ async def create_voice_pipeline(
         """Handle bot joining the room."""
         logger.info(f"Bot joined room: {room_name}")
         sys.stdout.flush()
-        # Start the conversation with minimal delay
-        await asyncio.sleep(0.3)
+        # Start conversation immediately - no delay needed
         await processor.start_conversation()
 
     @transport.event_handler("on_left")

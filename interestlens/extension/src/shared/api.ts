@@ -2,7 +2,8 @@
  * API client for InterestLens backend
  */
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// @ts-ignore - Vite handles import.meta.env
+const API_BASE = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) || 'http://localhost:8001';
 
 export async function analyzePageAPI(
   request: any,

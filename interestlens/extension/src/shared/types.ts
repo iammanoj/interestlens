@@ -60,7 +60,10 @@ export type MessageType =
   | 'GET_AUTH_STATE'
   | 'AUTH_STATE'
   | 'LOGIN'
-  | 'LOGOUT';
+  | 'LOGOUT'
+  | 'PREFERENCES_UPDATED'
+  | 'REFRESH_ANALYSIS'
+  | 'VOICE_SESSION_COMPLETE';
 
 export interface Message {
   type: MessageType;
