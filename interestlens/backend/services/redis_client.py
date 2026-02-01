@@ -206,7 +206,7 @@ async def get_cached_authenticity(item_id: str) -> Optional[dict]:
         if data:
             return json.loads(data)
         return None
-    except:
+    except Exception:
         return None
 
 
@@ -304,3 +304,224 @@ async def get_article_cache_stats() -> dict:
         }
     except Exception:
         return {"available": True, "cached_articles": 0}
+
+
+# Voice transcription storage functions
+
+def get_transcription_key(user_id: Optional[str], session_id: str) -> str:
+    """
+    Get the Redis key for storing transcriptions.
+    Uses user_id if authenticated, otherwise session_id.
+
+    Args:
+        user_id: Authenticated user's ID (may be None or start with 'anon_')
+        session_id: Session identifier
+
+    Returns:
+        Redis key string: transcription:user:{user_id} or transcription:session:{session_id}
+    """
+    # Use user_id if it's a real authenticated user (not anonymous)
+    if user_id and not user_id.startswith("anon_") and user_id != "anonymous":
+        return f"transcription:user:{user_id}"
+    return f"transcription:session:{session_id}"
+
+
+async def save_transcription_message(
+    user_id: Optional[str],
+    session_id: str,
+    role: str,
+    content: str
+) -> bool:
+    """
+    Save a transcription message to Redis (permanent storage).
+
+    Args:
+        user_id: User ID (or None for anonymous)
+        session_id: Session identifier
+        role: Message role ('user' or 'assistant')
+        content: Message content
+
+    Returns:
+        True if saved successfully, False otherwise
+    """
+    import time
+    import uuid
+
+    r = await get_redis()
+    if not r:
+        return False
+
+    try:
+        key = get_transcription_key(user_id, session_id)
+
+        # Get existing data or create new
+        existing = await r.get(key)
+        if existing:
+            data = json.loads(existing)
+        else:
+            # Determine identifier type
+            if user_id and not user_id.startswith("anon_") and user_id != "anonymous":
+                identifier = f"user:{user_id}"
+            else:
+                identifier = f"session:{session_id}"
+
+            data = {
+                "identifier": identifier,
+                "user_id": user_id,
+                "session_id": session_id,
+                "messages": [],
+                "extracted_categories": {"likes": [], "dislikes": []},
+                "final_extraction_complete": False,
+                "created_at": time.time(),
+                "updated_at": time.time()
+            }
+
+        # Add new message
+        message = {
+            "id": f"msg_{uuid.uuid4().hex[:8]}",
+            "role": role,
+            "content": content,
+            "timestamp": time.time()
+        }
+        data["messages"].append(message)
+        data["updated_at"] = time.time()
+
+        # Save permanently (no TTL)
+        await r.set(key, json.dumps(data))
+        return True
+
+    except Exception as e:
+        print(f"[TRANSCRIPTION] Error saving message: {e}")
+        return False
+
+
+async def get_transcription_history(
+    user_id: Optional[str],
+    session_id: str
+) -> Optional[dict]:
+    """
+    Get the full transcription history for a user/session.
+
+    Args:
+        user_id: User ID (or None for anonymous)
+        session_id: Session identifier
+
+    Returns:
+        Dict with messages and extracted categories, or None if not found
+    """
+    r = await get_redis()
+    if not r:
+        return None
+
+    try:
+        key = get_transcription_key(user_id, session_id)
+        data = await r.get(key)
+        if data:
+            return json.loads(data)
+        return None
+    except Exception as e:
+        print(f"[TRANSCRIPTION] Error getting history: {e}")
+        return None
+
+
+async def update_extracted_categories(
+    user_id: Optional[str],
+    session_id: str,
+    categories: dict
+) -> bool:
+    """
+    Update the extracted categories for a transcription.
+
+    Args:
+        user_id: User ID (or None for anonymous)
+        session_id: Session identifier
+        categories: Dict with 'likes' and 'dislikes' lists
+
+    Returns:
+        True if updated successfully, False otherwise
+    """
+    import time
+
+    r = await get_redis()
+    if not r:
+        return False
+
+    try:
+        key = get_transcription_key(user_id, session_id)
+        data = await r.get(key)
+
+        if not data:
+            return False
+
+        obj = json.loads(data)
+        obj["extracted_categories"] = categories
+        obj["updated_at"] = time.time()
+
+        await r.set(key, json.dumps(obj))
+        return True
+
+    except Exception as e:
+        print(f"[TRANSCRIPTION] Error updating categories: {e}")
+        return False
+
+
+async def mark_final_extraction_complete(
+    user_id: Optional[str],
+    session_id: str
+) -> bool:
+    """
+    Mark the final extraction as complete for a transcription.
+
+    Args:
+        user_id: User ID (or None for anonymous)
+        session_id: Session identifier
+
+    Returns:
+        True if marked successfully, False otherwise
+    """
+    import time
+
+    r = await get_redis()
+    if not r:
+        return False
+
+    try:
+        key = get_transcription_key(user_id, session_id)
+        data = await r.get(key)
+
+        if not data:
+            return False
+
+        obj = json.loads(data)
+        obj["final_extraction_complete"] = True
+        obj["updated_at"] = time.time()
+
+        await r.set(key, json.dumps(obj))
+        return True
+
+    except Exception as e:
+        print(f"[TRANSCRIPTION] Error marking complete: {e}")
+        return False
+
+
+async def get_transcription_by_key(key: str) -> Optional[dict]:
+    """
+    Get transcription data by direct key (for admin/debug).
+
+    Args:
+        key: The full Redis key (e.g., 'transcription:user:abc123')
+
+    Returns:
+        Dict with transcription data, or None if not found
+    """
+    r = await get_redis()
+    if not r:
+        return None
+
+    try:
+        data = await r.get(key)
+        if data:
+            return json.loads(data)
+        return None
+    except Exception:
+        return None

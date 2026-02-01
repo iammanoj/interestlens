@@ -6,9 +6,15 @@ All calls traced with Weave
 
 import os
 import asyncio
-from typing import List, Optional, Dict
+import json
+import re
+import math
+import logging
+from typing import List, Optional, Dict, Any
 import weave
 import google.generativeai as genai
+
+logger = logging.getLogger(__name__)
 
 from models.requests import PageItem, DOMOutline
 from models.responses import AnalyzePageResponse, ScoredItem, ProfileSummary
@@ -25,6 +31,9 @@ vision_model = genai.GenerativeModel("gemini-2.0-flash")
 fast_model = genai.GenerativeModel("gemini-2.0-flash")
 embedding_model = "models/text-embedding-004"
 
+# API timeout in seconds
+GEMINI_TIMEOUT = 30.0
+
 # Topic categories
 TOPIC_CATEGORIES = [
     "AI/ML", "programming", "cloud/infrastructure", "cybersecurity",
@@ -34,6 +43,65 @@ TOPIC_CATEGORIES = [
     "gaming", "movies/TV", "music", "sports",
     "health", "productivity", "design", "travel", "food"
 ]
+
+
+def extract_json_from_response(response, default: Any = None) -> Any:
+    """
+    Safely extract JSON from a Gemini API response.
+
+    Handles:
+    - Markdown code blocks (```json ... ```)
+    - Direct JSON responses
+    - Response access errors
+    - Invalid JSON
+
+    Args:
+        response: The Gemini API response object
+        default: Default value to return on failure
+
+    Returns:
+        Parsed JSON object or default value
+    """
+    try:
+        # Safely get response text
+        if response is None:
+            logger.warning("[JSON_EXTRACT] Response is None")
+            return default
+
+        if not hasattr(response, 'text'):
+            logger.warning(f"[JSON_EXTRACT] Response has no 'text' attribute: {type(response)}")
+            return default
+
+        text = response.text
+        if not text:
+            logger.warning("[JSON_EXTRACT] Response text is empty")
+            return default
+
+        # Try to extract JSON from markdown code blocks
+        # Pattern matches ```json ... ``` or ``` ... ```
+        code_block_pattern = r'```(?:json)?\s*([\s\S]*?)\s*```'
+        matches = re.findall(code_block_pattern, text)
+
+        if matches:
+            # Use the first code block found
+            json_str = matches[0].strip()
+        else:
+            # Assume the entire response is JSON
+            json_str = text.strip()
+
+        # Parse JSON
+        result = json.loads(json_str)
+        return result
+
+    except json.JSONDecodeError as e:
+        logger.error(f"[JSON_EXTRACT] JSON parse error: {e}. Raw text: {text[:500] if text else 'N/A'}...")
+        return default
+    except AttributeError as e:
+        logger.error(f"[JSON_EXTRACT] Attribute error accessing response: {e}")
+        return default
+    except Exception as e:
+        logger.error(f"[JSON_EXTRACT] Unexpected error: {type(e).__name__}: {e}")
+        return default
 
 
 @weave.op()
@@ -69,38 +137,39 @@ Return JSON:
   ]
 }}"""
 
-    if screenshot_base64:
-        response = await vision_model.generate_content_async([
-            {"mime_type": "image/jpeg", "data": screenshot_base64},
-            prompt
-        ])
-    else:
-        response = await fast_model.generate_content_async(prompt)
-
-    print("Response text used in extractor agent:", response.text)
-    print("Type of response.text:", type(response.text))
-
-    json_text = response.text
-    if response.text.index("```json") != -1:
-        start = response.text.index("```json") + len("```json")
-        end = response.text.index("```", start)
-        print(start)
-        print(end)
-        json_text = response.text[start:end].strip()
-
-    print(json_text)
-
-    # Parse response (simplified - add proper JSON parsing in production)
     try:
-        import json
-        result = json.loads(json_text)
+        if screenshot_base64:
+            response = await asyncio.wait_for(
+                vision_model.generate_content_async([
+                    {"mime_type": "image/jpeg", "data": screenshot_base64},
+                    prompt
+                ]),
+                timeout=GEMINI_TIMEOUT
+            )
+        else:
+            response = await asyncio.wait_for(
+                fast_model.generate_content_async(prompt),
+                timeout=GEMINI_TIMEOUT
+            )
+    except asyncio.TimeoutError:
+        logger.error(f"[EXTRACTOR] Gemini API timeout after {GEMINI_TIMEOUT}s")
+        response = None
     except Exception as e:
-        print("Error parsing extractor agent response:", e)
-        # Fallback: treat all items as content
-        result = {
-            "page_type": "other",
-            "items": [{"id": i.id, "is_content": True, "confidence": 0.5} for i in items]
-        }
+        logger.error(f"[EXTRACTOR] Gemini API error: {type(e).__name__}: {e}")
+        response = None
+
+    # Parse response with proper JSON extraction
+    fallback_result = {
+        "page_type": "other",
+        "items": [{"id": i.id, "is_content": True, "confidence": 0.5} for i in items]
+    }
+
+    result = extract_json_from_response(response, default=fallback_result)
+
+    # Validate result structure
+    if not isinstance(result, dict) or "items" not in result:
+        logger.warning(f"[EXTRACTOR] Invalid result structure, using fallback")
+        result = fallback_result
 
     return result
 
@@ -135,14 +204,31 @@ Available categories: {', '.join(TOPIC_CATEGORIES)}
 
 Return only the category names as a JSON array, e.g., ["AI/ML", "startups"]"""
 
-    response = await fast_model.generate_content_async(prompt)
-
     try:
-        import json
-        topics = json.loads(response.text)
-        return [t for t in topics if t in TOPIC_CATEGORIES]
-    except:
+        response = await asyncio.wait_for(
+            fast_model.generate_content_async(prompt),
+            timeout=GEMINI_TIMEOUT
+        )
+    except asyncio.TimeoutError:
+        logger.error(f"[CLASSIFY_TOPICS] Gemini API timeout after {GEMINI_TIMEOUT}s")
         return ["other"]
+    except Exception as e:
+        logger.error(f"[CLASSIFY_TOPICS] Gemini API error: {type(e).__name__}: {e}")
+        return ["other"]
+
+    topics = extract_json_from_response(response, default=[])
+
+    # Validate and filter topics
+    if not isinstance(topics, list):
+        logger.warning(f"[CLASSIFY_TOPICS] Expected list, got {type(topics)}")
+        return ["other"]
+
+    valid_topics = [t for t in topics if isinstance(t, str) and t in TOPIC_CATEGORIES]
+
+    if not valid_topics:
+        return ["other"]
+
+    return valid_topics
 
 
 @weave.op()
@@ -153,7 +239,8 @@ async def scorer_agent(
 ) -> List[dict]:
     """
     Agent 2: Scorer
-    Calculates interest scores using embeddings and user profile
+    Calculates interest scores using embeddings and user profile.
+    Uses parallel API calls for embeddings and topic classification.
     """
     # Filter to content items only
     content_ids = {
@@ -161,33 +248,48 @@ async def scorer_agent(
         if i.get("is_content", True)
     }
 
-    scored_items = []
+    content_items = [item for item in items if item.id in content_ids]
 
-    for item in items:
-        if item.id not in content_ids:
-            continue
+    if not content_items:
+        return []
 
-        # Get embedding
-        embedding = await get_embedding(item.text, item.id)
-
-        # Classify topics
-        topics = await classify_topics(item.text)
+    # Parallelize embedding and topic classification calls
+    async def process_item(item: PageItem) -> dict:
+        # Run embedding and topic classification in parallel
+        embedding, topics = await asyncio.gather(
+            get_embedding(item.text, item.id),
+            classify_topics(item.text)
+        )
 
         # Calculate score
         score = calculate_score(item, embedding, topics, user_profile)
 
-        scored_items.append({
+        return {
             "id": item.id,
             "score": score,
             "topics": topics,
             "embedding": embedding,
             "text": item.text
-        })
+        }
+
+    # Process all items in parallel (with implicit concurrency from asyncio.gather)
+    scored_items = await asyncio.gather(
+        *[process_item(item) for item in content_items],
+        return_exceptions=True
+    )
+
+    # Filter out any exceptions and log them
+    valid_items = []
+    for i, result in enumerate(scored_items):
+        if isinstance(result, Exception):
+            logger.error(f"[SCORER] Error processing item {content_items[i].id}: {result}")
+        else:
+            valid_items.append(result)
 
     # Sort by score
-    scored_items.sort(key=lambda x: x["score"], reverse=True)
+    valid_items.sort(key=lambda x: x["score"], reverse=True)
 
-    return scored_items[:10]  # Top 10
+    return valid_items[:10]  # Top 10
 
 
 def calculate_score(
@@ -244,7 +346,6 @@ def calculate_score(
 
 def cosine_similarity(a: List[float], b: List[float]) -> float:
     """Compute cosine similarity between two vectors"""
-    import math
     dot = sum(x * y for x, y in zip(a, b))
     norm_a = math.sqrt(sum(x * x for x in a))
     norm_b = math.sqrt(sum(x * x for x in b))
@@ -255,7 +356,6 @@ def cosine_similarity(a: List[float], b: List[float]) -> float:
 
 def sigmoid(x: float) -> float:
     """Sigmoid function"""
-    import math
     return 1 / (1 + math.exp(-x))
 
 
@@ -384,6 +484,10 @@ async def analyze_page_pipeline(
         profile_summary = ProfileSummary(
             top_topics=user_profile.get_top_topics(5)
         )
+
+    # page_type is a string, but page_topics expects a list
+    page_type = extractor_result.get("page_type", "other")
+    page_topics = [page_type] if isinstance(page_type, str) else page_type
 
     return AnalyzePageResponse(
         items=explained_items,

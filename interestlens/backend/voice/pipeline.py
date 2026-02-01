@@ -143,6 +143,7 @@ async def create_voice_pipeline(
     agent = OnboardingAgent(
         user_id=user_id,
         room_name=room_name,
+        session_id=room_name,  # Use room_name as session_id for Redis storage
         on_preferences_update=on_preferences_update,
         on_session_complete=on_session_complete,
         on_transcription=on_transcription
@@ -343,6 +344,7 @@ async def create_voice_pipeline_with_stt(
     agent = OnboardingAgent(
         user_id=user_id,
         room_name=room_name,
+        session_id=room_name,  # Use room_name as session_id for Redis storage
         on_preferences_update=on_preferences_update,
         on_session_complete=on_session_complete,
         on_transcription=on_transcription

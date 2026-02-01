@@ -7,8 +7,12 @@ from fastapi import APIRouter, Depends, HTTPException, WebSocket
 import httpx
 
 from auth.dependencies import get_optional_user
-from services.redis_client import get_redis, json_get, json_set
+from services.redis_client import (
+    get_redis, json_get, json_set,
+    get_transcription_history, get_transcription_by_key
+)
 from models.profile import UserProfile, VoicePreferences
+from voice.category_extraction import dict_to_categories
 from voice.text_fallback import (
     TextMessageRequest,
     TextMessageResponse,
@@ -103,6 +107,12 @@ async def start_voice_session(user: Optional[dict] = Depends(get_optional_user))
             room_name=room["name"],
             room_url=room["url"],
             user_id=user_id
+        )
+    except RuntimeError as e:
+        # Max sessions reached - return 503 Service Unavailable
+        raise HTTPException(
+            status_code=503,
+            detail=str(e)
         )
     except Exception as e:
         print(f"Failed to start bot: {e}")
@@ -250,14 +260,27 @@ async def get_opening_message():
 
 
 @router.get("/preferences")
-async def get_voice_preferences(user: Optional[dict] = Depends(get_optional_user)):
-    """Get user's voice onboarding preferences"""
+async def get_voice_preferences(
+    session_id: Optional[str] = None,
+    user: Optional[dict] = Depends(get_optional_user)
+):
+    """
+    Get user's voice onboarding preferences and extracted categories.
+
+    Args:
+        session_id: Optional session ID to get categories for a specific session
+
+    Returns:
+        Voice preferences, extracted categories, and last updated timestamp
+    """
     user_id = get_user_id(user, "anonymous")
     redis = await get_redis()
     if not redis:
         return {
             "voice_onboarding_complete": False,
-            "preferences": None
+            "preferences": None,
+            "extracted_categories": None,
+            "last_updated": None
         }
 
     profile_data = await json_get(f"user:{user_id}")
@@ -265,15 +288,42 @@ async def get_voice_preferences(user: Optional[dict] = Depends(get_optional_user
     if not profile_data:
         return {
             "voice_onboarding_complete": False,
-            "preferences": None
+            "preferences": None,
+            "extracted_categories": None,
+            "last_updated": None
         }
 
     profile = UserProfile(**profile_data)
 
+    # Get extracted categories from transcription history
+    extracted_categories = None
+    last_updated = None
+
+    # Try to get from session-specific transcription
+    if session_id:
+        transcription_data = await get_transcription_history(user_id, session_id)
+        if transcription_data:
+            categories_data = transcription_data.get("extracted_categories", {})
+            if categories_data.get("likes") or categories_data.get("dislikes"):
+                extracted_categories = categories_data
+            last_updated = transcription_data.get("updated_at")
+
+    # If no session-specific data, try to find most recent transcription for this user
+    if not extracted_categories:
+        # Check for user-level transcription
+        user_transcription_key = f"transcription:user:{user_id}"
+        transcription_data = await get_transcription_by_key(user_transcription_key)
+        if transcription_data:
+            categories_data = transcription_data.get("extracted_categories", {})
+            if categories_data.get("likes") or categories_data.get("dislikes"):
+                extracted_categories = categories_data
+            last_updated = transcription_data.get("updated_at")
+
     return {
         "voice_onboarding_complete": profile.voice_onboarding_complete,
         "preferences": profile.voice_preferences.model_dump() if profile.voice_preferences else None,
-        "last_updated": None  # TODO: Add timestamp tracking
+        "extracted_categories": extracted_categories,
+        "last_updated": last_updated
     }
 
 
@@ -349,4 +399,53 @@ async def save_voice_preferences(
     return {
         "status": "saved",
         "topics_count": len(preferences.topics)
+    }
+
+
+@router.get("/transcriptions/{identifier}")
+async def get_transcriptions(
+    identifier: str,
+    user: Optional[dict] = Depends(get_optional_user)
+):
+    """
+    Get transcription history for debugging/admin purposes.
+
+    Args:
+        identifier: Either a session_id or 'user:{user_id}' format
+
+    Returns:
+        Full transcription history with messages and extracted categories
+    """
+    redis = await get_redis()
+    if not redis:
+        raise HTTPException(status_code=503, detail="Redis unavailable")
+
+    # Determine the key to look up
+    if identifier.startswith("user:") or identifier.startswith("session:"):
+        key = f"transcription:{identifier}"
+    else:
+        # Assume it's a session_id
+        key = f"transcription:session:{identifier}"
+
+    transcription_data = await get_transcription_by_key(key)
+
+    if not transcription_data:
+        # Try as user key
+        user_id = get_user_id(user, "anonymous")
+        key = f"transcription:user:{user_id}"
+        transcription_data = await get_transcription_by_key(key)
+
+    if not transcription_data:
+        raise HTTPException(status_code=404, detail="Transcription not found")
+
+    return {
+        "identifier": transcription_data.get("identifier"),
+        "user_id": transcription_data.get("user_id"),
+        "session_id": transcription_data.get("session_id"),
+        "message_count": len(transcription_data.get("messages", [])),
+        "messages": transcription_data.get("messages", []),
+        "extracted_categories": transcription_data.get("extracted_categories", {}),
+        "final_extraction_complete": transcription_data.get("final_extraction_complete", False),
+        "created_at": transcription_data.get("created_at"),
+        "updated_at": transcription_data.get("updated_at")
     }

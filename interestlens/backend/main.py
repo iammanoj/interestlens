@@ -19,6 +19,7 @@ load_dotenv()
 # Import routers
 from auth.routes import router as auth_router
 from voice.routes import router as voice_router
+from activity.routes import router as activity_router
 from agents.pipeline import analyze_page_pipeline
 from services.redis_client import get_redis, init_redis
 from models.requests import AnalyzePageRequest, EventRequest
@@ -103,6 +104,7 @@ app.add_middleware(
 # Include routers
 app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
 app.include_router(voice_router, prefix="/voice", tags=["Voice Onboarding"])
+app.include_router(activity_router, prefix="/activity", tags=["Activity Tracking"])
 
 
 @app.get("/")
@@ -221,13 +223,15 @@ async def check_authenticity_batch(
     """
     Batch authenticity check for multiple items.
     Runs checks in parallel for performance.
+    Max 50 items per batch, max 10 concurrent.
     """
     from agents.authenticity import authenticity_agent
     import asyncio
     import time
 
     start_time = time.time()
-    semaphore = asyncio.Semaphore(request.max_concurrent)
+    # Use safe_max_concurrent to cap at server limit (1-10)
+    semaphore = asyncio.Semaphore(request.safe_max_concurrent)
 
     async def check_one(item: AuthenticityCheckRequest):
         async with semaphore:
@@ -346,6 +350,14 @@ async def check_authenticity_from_file(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"No valid URLs found in file. Errors: {parse_errors}"
+        )
+
+    # Limit number of URLs to prevent DoS
+    MAX_URLS_PER_FILE = 100
+    if len(urls) > MAX_URLS_PER_FILE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"File contains {len(urls)} URLs. Maximum allowed is {MAX_URLS_PER_FILE}."
         )
 
     start_time = time.time()

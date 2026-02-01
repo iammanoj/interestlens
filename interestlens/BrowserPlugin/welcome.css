@@ -1,0 +1,486 @@
+/* ============================================
+   InterestLens Welcome/Onboarding Modal
+   ============================================ */
+
+/* Modal Overlay */
+.il-welcome-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: il-fade-in 0.3s ease;
+}
+
+@keyframes il-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Modal Container */
+.il-welcome-modal {
+  background: #ffffff;
+  border-radius: 16px;
+  width: 90%;
+  max-width: 480px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25);
+  animation: il-slide-up 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes il-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+  .il-welcome-modal {
+    background: #1e293b;
+    color: #f8fafc;
+  }
+
+  .il-welcome-step-desc {
+    color: #cbd5e1 !important;
+  }
+
+  .il-welcome-footer {
+    background: #0f172a !important;
+    border-color: #334155 !important;
+  }
+
+  .il-welcome-skip {
+    color: #94a3b8 !important;
+  }
+}
+
+/* Modal Header */
+.il-welcome-header {
+  padding: 32px 32px 24px;
+  text-align: center;
+}
+
+.il-welcome-logo {
+  width: 72px;
+  height: 72px;
+  background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px;
+  box-shadow: 0 8px 24px rgba(99, 102, 241, 0.3);
+}
+
+.il-welcome-logo svg {
+  width: 36px;
+  height: 36px;
+  color: white;
+}
+
+.il-welcome-title {
+  font-size: 28px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 8px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  .il-welcome-title {
+    color: #f8fafc;
+  }
+}
+
+.il-welcome-subtitle {
+  font-size: 16px;
+  color: #64748b;
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Modal Body */
+.il-welcome-body {
+  padding: 0 32px 24px;
+}
+
+/* Steps/Features */
+.il-welcome-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.il-welcome-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px;
+  background: #f8fafc;
+  border-radius: 12px;
+  transition: transform 0.2s ease;
+}
+
+@media (prefers-color-scheme: dark) {
+  .il-welcome-step {
+    background: #334155;
+  }
+}
+
+.il-welcome-step:hover {
+  transform: translateX(4px);
+}
+
+.il-welcome-step-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.il-welcome-step-icon svg {
+  width: 22px;
+  height: 22px;
+  color: white;
+}
+
+.il-welcome-step-icon.voice {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+}
+
+.il-welcome-step-icon.track {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+}
+
+.il-welcome-step-icon.highlight {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+}
+
+.il-welcome-step-content {
+  flex: 1;
+}
+
+.il-welcome-step-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+  margin: 0 0 4px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .il-welcome-step-title {
+    color: #f8fafc;
+  }
+}
+
+.il-welcome-step-desc {
+  font-size: 13px;
+  color: #64748b;
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Modal Footer */
+.il-welcome-footer {
+  padding: 20px 32px;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+  border-radius: 0 0 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.il-welcome-btn {
+  width: 100%;
+  padding: 14px 24px;
+  border: none;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.il-welcome-btn-primary {
+  background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+  color: white;
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+}
+
+.il-welcome-btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.5);
+}
+
+.il-welcome-btn-primary:active {
+  transform: scale(0.98);
+}
+
+.il-welcome-skip {
+  background: none;
+  border: none;
+  color: #64748b;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 8px;
+  text-align: center;
+}
+
+.il-welcome-skip:hover {
+  color: #475569;
+  text-decoration: underline;
+}
+
+/* Voice Onboarding Screen */
+.il-voice-onboarding {
+  padding: 32px;
+  text-align: center;
+}
+
+.il-voice-avatar {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  margin: 0 auto 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.il-voice-avatar svg {
+  width: 48px;
+  height: 48px;
+  color: white;
+}
+
+.il-voice-avatar.listening {
+  animation: il-pulse-voice 1.5s ease-in-out infinite;
+}
+
+@keyframes il-pulse-voice {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 20px rgba(16, 185, 129, 0);
+  }
+}
+
+.il-voice-status-text {
+  font-size: 18px;
+  font-weight: 600;
+  color: #0f172a;
+  margin: 0 0 8px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .il-voice-status-text {
+    color: #f8fafc;
+  }
+}
+
+.il-voice-hint {
+  font-size: 14px;
+  color: #64748b;
+  margin: 0 0 24px;
+}
+
+.il-voice-transcript {
+  background: #f1f5f9;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 24px;
+  min-height: 60px;
+  text-align: left;
+}
+
+@media (prefers-color-scheme: dark) {
+  .il-voice-transcript {
+    background: #334155;
+  }
+}
+
+.il-voice-transcript-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #94a3b8;
+  margin-bottom: 8px;
+  letter-spacing: 0.5px;
+}
+
+.il-voice-transcript-text {
+  font-size: 14px;
+  color: #0f172a;
+  line-height: 1.5;
+}
+
+@media (prefers-color-scheme: dark) {
+  .il-voice-transcript-text {
+    color: #f8fafc;
+  }
+}
+
+.il-voice-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 24px;
+  justify-content: center;
+}
+
+.il-voice-category {
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.il-voice-category.like {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.il-voice-category.dislike {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+@media (prefers-color-scheme: dark) {
+  .il-voice-category.like {
+    background: rgba(34, 197, 94, 0.2);
+  }
+  .il-voice-category.dislike {
+    background: rgba(239, 68, 68, 0.2);
+  }
+}
+
+.il-voice-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.il-voice-actions .il-welcome-btn {
+  flex: 1;
+}
+
+.il-voice-btn-secondary {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+@media (prefers-color-scheme: dark) {
+  .il-voice-btn-secondary {
+    background: #475569;
+    color: #e2e8f0;
+  }
+}
+
+.il-voice-btn-secondary:hover {
+  background: #cbd5e1;
+}
+
+/* Connection status */
+.il-voice-connection {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #64748b;
+  margin-bottom: 16px;
+}
+
+.il-voice-connection-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+
+.il-voice-connection-dot.connected {
+  background: #22c55e;
+}
+
+.il-voice-connection-dot.connecting {
+  background: #eab308;
+  animation: il-blink 1s ease-in-out infinite;
+}
+
+@keyframes il-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* Daily iframe container */
+.il-daily-container {
+  width: 100%;
+  height: 300px;
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 16px;
+  background: #0f172a;
+}
+
+.il-daily-container iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+/* Mic button pulse animation */
+@keyframes il-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 15px rgba(239, 68, 68, 0);
+  }
+}
+
+/* Mic button styles */
+#il-mic-btn {
+  transition: all 0.2s ease;
+}
+
+#il-mic-btn:hover {
+  transform: scale(1.05);
+}
+
+#il-mic-btn:active {
+  transform: scale(0.95);
+}
+
+/* Pop-in animation for new categories */
+@keyframes il-pop-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}

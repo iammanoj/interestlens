@@ -91,6 +91,16 @@ class BatchAuthenticityRequest(BaseModel):
     items: List[AuthenticityCheckRequest]
     max_concurrent: int = 3
 
+    @property
+    def safe_max_concurrent(self) -> int:
+        """Return max_concurrent capped at server limit"""
+        return min(max(1, self.max_concurrent), 10)
+
+    def model_post_init(self, __context) -> None:
+        """Validate batch size to prevent DoS"""
+        if len(self.items) > 50:
+            raise ValueError("Batch size cannot exceed 50 items")
+
 
 class BatchAuthenticityResponse(BaseModel):
     """Batch response"""

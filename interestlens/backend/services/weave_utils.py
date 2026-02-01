@@ -174,7 +174,7 @@ def get_trace_url() -> Optional[str]:
     try:
         if get_weave_enabled() and hasattr(weave, 'get_current_trace_url'):
             return weave.get_current_trace_url()
-    except:
+    except Exception:
         pass
     return None
 

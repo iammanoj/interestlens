@@ -96,3 +96,129 @@ curl -s -X POST "$BASE_URL/analyze_page?check_authenticity=false" \
 echo -e "\n--- Preview URL ---"
 curl -s -X POST "$BASE_URL/preview_url?url=https://example.com" \
   -H "Content-Type: application/json" | jq .
+
+# -------------------------------------------
+# 4. AUTHENTICITY CHECK ENDPOINTS
+# -------------------------------------------
+
+echo -e "\n=== Testing Authenticity Check Endpoints ==="
+
+# Check authenticity with URL only
+echo -e "\n--- Check Authenticity (URL only) ---"
+curl -s -X POST "$BASE_URL/check_authenticity" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "item_id": "test-auth-1",
+    "url": "https://apnews.com/article/example",
+    "text": "",
+    "check_depth": "quick"
+  }' | jq .
+
+# Check authenticity with text content
+echo -e "\n--- Check Authenticity (with text) ---"
+curl -s -X POST "$BASE_URL/check_authenticity" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "item_id": "test-auth-2",
+    "url": "https://example.com/news",
+    "text": "President Biden announced new economic policies today. The White House confirmed the measures during a press briefing.",
+    "check_depth": "standard"
+  }' | jq .
+
+# Check authenticity - fact-checkable claim
+echo -e "\n--- Check Authenticity (fact-checkable claim) ---"
+curl -s -X POST "$BASE_URL/check_authenticity" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "item_id": "test-auth-3",
+    "url": "https://example.com/viral",
+    "text": "A viral post claims COVID vaccines contain microchips. Health officials have denied these claims.",
+    "check_depth": "standard"
+  }' | jq .
+
+# Batch authenticity check
+echo -e "\n--- Batch Authenticity Check ---"
+curl -s -X POST "$BASE_URL/check_authenticity/batch" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": [
+      {"item_id": "batch-1", "url": "https://reuters.com/article/1", "text": "Test article 1", "check_depth": "quick"},
+      {"item_id": "batch-2", "url": "https://apnews.com/article/2", "text": "Test article 2", "check_depth": "quick"}
+    ],
+    "max_concurrent": 2
+  }' | jq .
+
+# -------------------------------------------
+# 5. VOICE ONBOARDING ENDPOINTS
+# -------------------------------------------
+
+echo -e "\n=== Testing Voice Onboarding Endpoints ==="
+
+# Get opening message for text session
+echo -e "\n--- Get Text Session Opening ---"
+curl -s -X GET "$BASE_URL/voice/text-session/opening" | jq .
+
+# Start text session with first message
+echo -e "\n--- Send Text Message (Start Session) ---"
+SESSION_ID="test-session-$(date +%s)"
+curl -s -X POST "$BASE_URL/voice/text-message" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"session_id\": \"$SESSION_ID\",
+    \"message\": \"Hello, I am interested in technology and AI news.\"
+  }" | jq .
+
+# Send follow-up message
+echo -e "\n--- Send Text Message (Follow-up) ---"
+curl -s -X POST "$BASE_URL/voice/text-message" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"session_id\": \"$SESSION_ID\",
+    \"message\": \"I also like science and space exploration topics.\"
+  }" | jq .
+
+# Get text session status
+echo -e "\n--- Get Text Session Status ---"
+curl -s -X GET "$BASE_URL/voice/text-session/$SESSION_ID/status" | jq .
+
+# End text session
+echo -e "\n--- End Text Session ---"
+curl -s -X POST "$BASE_URL/voice/text-session/$SESSION_ID/end" | jq .
+
+# Get voice preferences (no auth - will use anonymous)
+echo -e "\n--- Get Voice Preferences ---"
+curl -s -X GET "$BASE_URL/voice/preferences" | jq .
+
+# -------------------------------------------
+# 6. DAILY.CO VOICE SESSION (requires DAILY_API_KEY)
+# -------------------------------------------
+
+echo -e "\n=== Testing Daily.co Voice Session ==="
+
+# Start voice session (creates Daily room)
+echo -e "\n--- Start Voice Session ---"
+curl -s -X POST "$BASE_URL/voice/start-session" | jq .
+
+# -------------------------------------------
+# 7. WEBSOCKET ENDPOINTS (info only)
+# -------------------------------------------
+
+echo -e "\n=== WebSocket Endpoints (Manual Testing) ==="
+echo "
+WebSocket endpoints available for manual testing:
+
+1. Voice Session Updates:
+   ws://localhost:8000/voice/session/{room_name}/updates
+   - Receive real-time preference updates during voice onboarding
+
+2. Audio Streaming (Chrome Extension):
+   ws://localhost:8000/voice/audio-stream/{session_id}
+   - Stream audio from browser for transcription
+   - Send: {\"type\": \"start_listening\"}, {\"type\": \"audio_chunk\", \"data\": \"base64\"}, {\"type\": \"stop_listening\"}
+   - Receive: {\"type\": \"transcription\", \"text\": \"...\"}, {\"type\": \"agent_response\", \"text\": \"...\"}
+
+Use wscat or browser WebSocket API to test:
+  wscat -c ws://localhost:8000/voice/audio-stream/test-session
+"
+
+echo -e "\n=== All Tests Complete ==="
