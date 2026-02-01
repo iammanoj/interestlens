@@ -34,8 +34,8 @@ genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 conversation_model = genai.GenerativeModel(
     "gemini-2.0-flash-lite",
     generation_config={
-        "max_output_tokens": 30,  # Shorter responses = faster TTS
-        "temperature": 0.5,       # Lower temp = faster generation
+        "max_output_tokens": 25,  # Ultra-short responses = faster TTS (< 3 seconds)
+        "temperature": 0.3,       # Lower temp = faster, more deterministic
     }
 )
 

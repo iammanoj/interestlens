@@ -23,11 +23,16 @@ async def save_user_profile(profile: UserProfile):
     await json_set(f"user:{profile.user_id}", "$", profile.model_dump())
 
 
-async def update_user_profile(user_id: str, event_type: str, item_data: dict):
+async def update_user_profile(user_id: str, event_type: str, item_data):
     """
     Update user profile based on an interaction event.
     Uses EMA (Exponential Moving Average) for embeddings.
     Creates a new profile if one doesn't exist.
+
+    Args:
+        user_id: The user's ID
+        event_type: Type of event (click, thumbs_up, thumbs_down, dwell)
+        item_data: ItemData Pydantic model or dict with topics and optional embedding
     """
     profile = await get_user_profile(user_id)
     if not profile:
@@ -36,8 +41,19 @@ async def update_user_profile(user_id: str, event_type: str, item_data: dict):
 
     alpha = 0.85  # Decay factor for EMA
 
+    # Handle both Pydantic model and dict
+    if hasattr(item_data, 'model_dump'):
+        # Pydantic model - convert to dict
+        data = item_data.model_dump()
+    elif hasattr(item_data, 'topics'):
+        # Direct attribute access
+        data = {"topics": item_data.topics, "embedding": getattr(item_data, 'embedding', None)}
+    else:
+        # Already a dict
+        data = item_data
+
     # Update topic affinity
-    topics = item_data.get("topics", [])
+    topics = data.get("topics", [])
     for topic in topics:
         current = profile.topic_affinity.get(topic, 0.0)
 
@@ -51,7 +67,7 @@ async def update_user_profile(user_id: str, event_type: str, item_data: dict):
             profile.topic_affinity[topic] = current + 0.1
 
     # Update embedding vector (EMA)
-    embedding = item_data.get("embedding")
+    embedding = data.get("embedding")
     if embedding and event_type in ["click", "thumbs_up", "dwell"]:
         if profile.user_text_vector:
             # EMA update

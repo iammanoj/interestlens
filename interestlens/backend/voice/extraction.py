@@ -10,9 +10,17 @@ import google.generativeai as genai
 
 from models.profile import TopicPreference, ContentPreference, VoicePreferences
 
-# Configure Gemini
+# Configure Gemini - use flash-lite for low latency during real-time conversation
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-model = genai.GenerativeModel("gemini-2.0-flash")
+# Use flash-lite for real-time extraction (faster), flash for final extraction
+model = genai.GenerativeModel(
+    "gemini-2.0-flash-lite",
+    generation_config={
+        "max_output_tokens": 200,  # Limit output for faster responses
+        "temperature": 0.3,        # Lower temp = faster, more deterministic
+    }
+)
+final_model = genai.GenerativeModel("gemini-2.0-flash")  # More thorough for final
 
 EXTRACTION_PROMPT = """You are analyzing a conversation to extract content preferences.
 
@@ -263,7 +271,8 @@ Extract ALL preferences into this JSON format (no markdown, just JSON):
 Be thorough - capture all topics, sentiments, and specific subtopics mentioned."""
 
     try:
-        response = await model.generate_content_async(final_prompt)
+        # Use the more thorough flash model for final extraction (not latency-critical)
+        response = await final_model.generate_content_async(final_prompt)
         text = response.text.strip()
 
         # Clean up response

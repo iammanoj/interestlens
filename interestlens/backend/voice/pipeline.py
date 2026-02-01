@@ -148,13 +148,13 @@ async def create_voice_pipeline(
     )
 
     # Daily transport configuration - disable built-in transcription, use OpenAI STT instead
-    # Optimized VAD settings for lowest latency
+    # Ultra-optimized VAD settings for lowest latency
     vad = SileroVADAnalyzer(
         params=VADParams(
-            confidence=0.5,      # Lower threshold = faster detection (default 0.7)
-            start_secs=0.05,     # Very fast start detection
-            stop_secs=0.2,       # Reduced from 0.4 - faster end-of-speech detection
-            min_volume=0.4,      # Lower volume threshold
+            confidence=0.45,     # Lower threshold = faster detection (default 0.7)
+            start_secs=0.03,     # Ultra-fast start detection (30ms)
+            stop_secs=0.12,      # Reduced from 0.2 - faster end-of-speech (120ms)
+            min_volume=0.35,     # Lower volume threshold for sensitivity
         )
     )
 
@@ -186,12 +186,12 @@ async def create_voice_pipeline(
         )
         logger.info("Using OpenAI Whisper STT")
 
-    # OpenAI TTS for speech synthesis - optimized for low latency
+    # OpenAI TTS for speech synthesis - ultra-optimized for low latency
     tts = OpenAITTSService(
         api_key=os.getenv("OPENAI_API_KEY"),
         voice="nova",        # Friendly female voice
         model="tts-1",       # Faster model (vs tts-1-hd)
-        speed=1.15,          # Faster speech for quicker responses
+        speed=1.2,           # Faster speech = shorter audio = quicker response
     )
 
     # Create the onboarding processor

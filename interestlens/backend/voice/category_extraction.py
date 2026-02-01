@@ -13,12 +13,18 @@ import google.generativeai as genai
 
 from models.profile import ExtractedCategory, ExtractedCategories
 
-# Configure Gemini
+# Configure Gemini - use flash-lite for low-latency during real-time extraction
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-extraction_model = genai.GenerativeModel("gemini-2.0-flash")
+extraction_model = genai.GenerativeModel(
+    "gemini-2.0-flash-lite",
+    generation_config={
+        "max_output_tokens": 300,  # Limit output for faster responses
+        "temperature": 0.2,        # Low temp = faster, deterministic
+    }
+)
 
-# API timeout in seconds
-GEMINI_TIMEOUT = 30.0
+# API timeout in seconds - reduced for faster fail-fast
+GEMINI_TIMEOUT = 10.0
 
 # Import TOPIC_CATEGORIES from the single source of truth
 from agents.pipeline import TOPIC_CATEGORIES
