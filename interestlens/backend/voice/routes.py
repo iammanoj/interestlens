@@ -2,12 +2,27 @@
 
 import os
 import time
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, WebSocket
 import httpx
 
-from auth.dependencies import get_current_user
-from services.redis_client import get_redis
+from auth.dependencies import get_optional_user
+from services.redis_client import get_redis, json_get, json_set
 from models.profile import UserProfile, VoicePreferences
+from voice.text_fallback import (
+    TextMessageRequest,
+    TextMessageResponse,
+    handle_text_message,
+    get_text_session_status,
+    end_text_session,
+    get_text_session_opening
+)
+from voice.session_manager import (
+    start_bot_for_session,
+    end_session,
+    get_session_status
+)
+from voice.websocket import websocket_endpoint
 
 router = APIRouter()
 
@@ -15,9 +30,16 @@ DAILY_API_KEY = os.getenv("DAILY_API_KEY")
 DAILY_DOMAIN = os.getenv("DAILY_DOMAIN", "interestlens.daily.co")
 
 
+def get_user_id(user: Optional[dict], fallback: str = "anonymous") -> str:
+    """Get user ID from auth or use fallback for unauthenticated requests."""
+    return user["id"] if user else fallback
+
+
 @router.post("/start-session")
-async def start_voice_session(user: dict = Depends(get_current_user)):
-    """Create a Daily room for voice onboarding"""
+async def start_voice_session(user: Optional[dict] = Depends(get_optional_user)):
+    """Create a Daily room for voice onboarding and start the bot"""
+    user_id = get_user_id(user, "anonymous")
+    user_name = user.get("name", "User") if user else "User"
 
     if not DAILY_API_KEY:
         raise HTTPException(
@@ -56,8 +78,8 @@ async def start_voice_session(user: dict = Depends(get_current_user)):
             json={
                 "properties": {
                     "room_name": room["name"],
-                    "user_id": user["id"],
-                    "user_name": user.get("name", "User"),
+                    "user_id": user_id,
+                    "user_name": user_name,
                     "enable_recording": False,
                 }
             }
@@ -71,22 +93,143 @@ async def start_voice_session(user: dict = Depends(get_current_user)):
 
         token = token_response.json()["token"]
 
-    # TODO: Start Pipecat bot in the room (requires separate process)
-    # For hackathon, this could be a separate service or triggered via webhook
+    # Start Pipecat bot in the room
+    try:
+        session = await start_bot_for_session(
+            room_name=room["name"],
+            room_url=room["url"],
+            user_id=user_id
+        )
+    except Exception as e:
+        print(f"Failed to start bot: {e}")
+        # Bot failed but room is ready - user can still use text fallback
 
     return {
         "room_url": room["url"],
         "room_name": room["name"],
         "token": token,
-        "expires_at": room["config"]["exp"]
+        "expires_at": room["config"]["exp"],
+        "websocket_url": f"/voice/session/{room['name']}/updates"
+    }
+
+
+@router.get("/session/{room_name}/status")
+async def get_voice_session_status(
+    room_name: str,
+    user: Optional[dict] = Depends(get_optional_user)
+):
+    """Get the status of a voice session and current preferences"""
+    status = await get_session_status(room_name)
+
+    if not status["exists"]:
+        # Check if it's a text session
+        text_status = await get_text_session_status(room_name)
+        if text_status["exists"]:
+            return text_status
+
+    return status
+
+
+@router.post("/session/{room_name}/end")
+async def end_voice_session(
+    room_name: str,
+    user: Optional[dict] = Depends(get_optional_user)
+):
+    """Manually end a voice session"""
+    await end_session(room_name)
+    return {
+        "status": "ended",
+        "room_name": room_name
+    }
+
+
+@router.websocket("/session/{room_name}/updates")
+async def voice_session_websocket(websocket: WebSocket, room_name: str):
+    """
+    WebSocket endpoint for real-time voice session updates.
+
+    Connect to receive live preference updates during voice onboarding.
+
+    Messages sent:
+    - {"type": "connected", "room_name": "...", "message": "..."}
+    - {"type": "preference_update", "preferences": {...}, "topics_count": N}
+    - {"type": "session_complete", "preferences": {...}}
+    - {"type": "status_update", ...}
+    - {"type": "error", "error": "..."}
+    - {"type": "heartbeat"}
+
+    Messages you can send:
+    - {"type": "ping"} -> responds with {"type": "pong"}
+    - {"type": "get_status"} -> responds with current status
+    """
+    await websocket_endpoint(websocket, room_name)
+
+
+@router.post("/text-message", response_model=TextMessageResponse)
+async def send_text_message(
+    request: TextMessageRequest,
+    user: Optional[dict] = Depends(get_optional_user)
+):
+    """
+    Send a text message for text-based onboarding fallback.
+
+    Use this when voice fails or is unavailable.
+    First message in a session will receive the opening greeting.
+    """
+    user_id = get_user_id(user, f"anon_{request.session_id}")
+    response = await handle_text_message(
+        session_id=request.session_id,
+        user_id=user_id,
+        message=request.message
+    )
+    return response
+
+
+@router.get("/text-session/{session_id}/status")
+async def get_text_session_status_endpoint(
+    session_id: str,
+    user: Optional[dict] = Depends(get_optional_user)
+):
+    """Get the status of a text session"""
+    return await get_text_session_status(session_id)
+
+
+@router.post("/text-session/{session_id}/end")
+async def end_text_session_endpoint(
+    session_id: str,
+    user: Optional[dict] = Depends(get_optional_user)
+):
+    """End a text session and save preferences"""
+    user_id = get_user_id(user, f"anon_{session_id}")
+    preferences = await end_text_session(session_id, user_id)
+    return {
+        "status": "ended",
+        "session_id": session_id,
+        "preferences": preferences.model_dump()
+    }
+
+
+@router.get("/text-session/opening")
+async def get_opening_message():
+    """Get the opening message for a new text session"""
+    opening = await get_text_session_opening()
+    return {
+        "message": opening
     }
 
 
 @router.get("/preferences")
-async def get_voice_preferences(user: dict = Depends(get_current_user)):
+async def get_voice_preferences(user: Optional[dict] = Depends(get_optional_user)):
     """Get user's voice onboarding preferences"""
+    user_id = get_user_id(user, "anonymous")
     redis = await get_redis()
-    profile_data = await redis.json().get(f"user:{user['id']}")
+    if not redis:
+        return {
+            "voice_onboarding_complete": False,
+            "preferences": None
+        }
+
+    profile_data = await json_get(f"user:{user_id}")
 
     if not profile_data:
         return {
@@ -104,12 +247,16 @@ async def get_voice_preferences(user: dict = Depends(get_current_user)):
 
 
 @router.delete("/preferences")
-async def clear_voice_preferences(user: dict = Depends(get_current_user)):
+async def clear_voice_preferences(user: Optional[dict] = Depends(get_optional_user)):
     """Clear voice preferences and allow re-onboarding"""
+    user_id = get_user_id(user, "anonymous")
     redis = await get_redis()
-    profile_key = f"user:{user['id']}"
+    if not redis:
+        raise HTTPException(status_code=503, detail="Redis unavailable")
 
-    profile_data = await redis.json().get(profile_key)
+    profile_key = f"user:{user_id}"
+
+    profile_data = await json_get(profile_key)
     if profile_data:
         profile = UserProfile(**profile_data)
         profile.voice_onboarding_complete = False
@@ -117,7 +264,7 @@ async def clear_voice_preferences(user: dict = Depends(get_current_user)):
 
         # Also clear topic affinities from voice
         # (keep click-based affinities)
-        await redis.json().set(profile_key, "$", profile.model_dump())
+        await json_set(profile_key, "$", profile.model_dump())
 
     return {
         "status": "cleared",
@@ -128,16 +275,20 @@ async def clear_voice_preferences(user: dict = Depends(get_current_user)):
 @router.post("/save-preferences")
 async def save_voice_preferences(
     preferences: VoicePreferences,
-    user: dict = Depends(get_current_user)
+    user: Optional[dict] = Depends(get_optional_user)
 ):
     """
     Save extracted voice preferences.
     Called by the Pipecat bot after conversation ends.
     """
+    user_id = get_user_id(user, "anonymous")
     redis = await get_redis()
-    profile_key = f"user:{user['id']}"
+    if not redis:
+        raise HTTPException(status_code=503, detail="Redis unavailable")
 
-    profile_data = await redis.json().get(profile_key)
+    profile_key = f"user:{user_id}"
+
+    profile_data = await json_get(profile_key)
     if not profile_data:
         raise HTTPException(status_code=404, detail="User profile not found")
 
@@ -162,7 +313,7 @@ async def save_voice_preferences(
     profile.voice_onboarding_complete = True
     profile.voice_preferences = preferences
 
-    await redis.json().set(profile_key, "$", profile.model_dump())
+    await json_set(profile_key, "$", profile.model_dump())
 
     return {
         "status": "saved",

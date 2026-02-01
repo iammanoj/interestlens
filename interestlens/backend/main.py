@@ -4,11 +4,12 @@ FastAPI server with Google Cloud ADK agents, Redis, and Weave observability
 """
 
 import os
+import asyncio
 from contextlib import asynccontextmanager
 from typing import Optional
 
 import weave
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -47,6 +48,17 @@ except Exception as e:
     print(f"Weave init skipped: {e}")
 
 
+async def run_session_cleanup():
+    """Periodically cleanup stale voice sessions"""
+    from voice.session_manager import cleanup_stale_sessions
+    while True:
+        await asyncio.sleep(300)  # Every 5 minutes
+        try:
+            await cleanup_stale_sessions()
+        except Exception as e:
+            print(f"Session cleanup error: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize services on startup"""
@@ -55,7 +67,18 @@ async def lifespan(app: FastAPI):
         print("Redis connected successfully")
     except Exception as e:
         print(f"Redis not available - running without caching: {e}")
+
+    # Start background task for voice session cleanup
+    cleanup_task = asyncio.create_task(run_session_cleanup())
+
     yield
+
+    # Cancel cleanup task on shutdown
+    cleanup_task.cancel()
+    try:
+        await cleanup_task
+    except asyncio.CancelledError:
+        pass
 
 
 app = FastAPI(
@@ -263,6 +286,119 @@ async def get_authenticity_status(item_id: str):
         "item_id": item_id,
         "message": "No authenticity check found for this item"
     }
+
+
+@app.post("/check_authenticity/file", response_model=BatchAuthenticityResponse)
+@weave.op()
+async def check_authenticity_from_file(
+    file: UploadFile = File(...),
+    max_concurrent: int = Query(default=3, ge=1, le=10),
+    check_depth: str = Query(default="standard"),
+    user: Optional[dict] = Depends(get_optional_user)
+):
+    """
+    Batch authenticity check from an uploaded file containing URLs.
+
+    The file should contain one URL per line.
+    Lines starting with # are treated as comments and ignored.
+    Blank lines are ignored.
+
+    Args:
+        file: Text file with URLs (one per line)
+        max_concurrent: Maximum concurrent checks (1-10, default: 3)
+        check_depth: Check depth: quick, standard, or thorough (default: standard)
+
+    Returns:
+        BatchAuthenticityResponse with results for each URL
+    """
+    import uuid
+    import time
+    from models.batch import parse_url_file
+    from services.browserbase import extract_article_content
+    from agents.authenticity import authenticity_agent
+
+    # Validate check_depth
+    if check_depth not in ["quick", "standard", "thorough"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="check_depth must be one of: quick, standard, thorough"
+        )
+
+    # Read and decode file content
+    try:
+        content = await file.read()
+        content_str = content.decode("utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File must be UTF-8 encoded text"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error reading file: {str(e)}"
+        )
+
+    # Parse URLs from file
+    urls, parse_errors = parse_url_file(content_str)
+
+    if not urls:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"No valid URLs found in file. Errors: {parse_errors}"
+        )
+
+    start_time = time.time()
+    semaphore = asyncio.Semaphore(max_concurrent)
+
+    async def process_url(url: str) -> Optional[AuthenticityCheckResponse]:
+        async with semaphore:
+            try:
+                # Extract article content via Browserbase
+                article_content = await extract_article_content(url)
+
+                if not article_content or not article_content.full_text:
+                    print(f"[FILE_BATCH] Failed to extract content from: {url}")
+                    return None
+
+                # Run authenticity check
+                item_id = str(uuid.uuid4())
+                result = await authenticity_agent(
+                    item_id=item_id,
+                    url=url,
+                    text=article_content.full_text,
+                    check_depth=check_depth
+                )
+
+                return AuthenticityCheckResponse(
+                    item_id=result.item_id,
+                    authenticity_score=result.authenticity_score,
+                    confidence=result.confidence,
+                    verification_status=result.verification_status,
+                    sources_checked=result.sources_checked,
+                    corroborating_count=result.corroborating_count,
+                    conflicting_count=result.conflicting_count,
+                    explanation=result.explanation,
+                    checked_at=result.checked_at,
+                    processing_time_ms=result.processing_time_ms
+                )
+            except Exception as e:
+                print(f"[FILE_BATCH] Error processing {url}: {e}")
+                return None
+
+    # Process all URLs concurrently
+    results = await asyncio.gather(
+        *[process_url(url) for url in urls],
+        return_exceptions=True
+    )
+
+    # Filter out None results and exceptions
+    valid_results = [r for r in results if isinstance(r, AuthenticityCheckResponse)]
+
+    return BatchAuthenticityResponse(
+        results=valid_results,
+        total_processing_time_ms=int((time.time() - start_time) * 1000)
+    )
 
 
 if __name__ == "__main__":

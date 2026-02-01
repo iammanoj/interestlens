@@ -9,9 +9,8 @@ from google.auth.transport import requests as google_requests
 import httpx
 
 from .jwt import create_access_token
-from services.redis_client import get_redis
+from services.redis_client import get_redis, json_get, json_set
 from models.profile import UserProfile
-from models.requests import TokenRequest
 
 router = APIRouter()
 
@@ -84,9 +83,8 @@ async def google_callback(code: str, request: Request):
     picture = idinfo.get("picture")
 
     # Get or create user profile in Redis
-    redis = await get_redis()
     profile_key = f"user:{user_id}"
-    existing_profile = await redis.json().get(profile_key)
+    existing_profile = await json_get(profile_key)
 
     if not existing_profile:
         # Create new profile
@@ -95,7 +93,7 @@ async def google_callback(code: str, request: Request):
             email=email,
             name=name
         )
-        await redis.json().set(profile_key, "$", profile.model_dump())
+        await json_set(profile_key, "$", profile.model_dump())
         profile_exists = False
     else:
         profile_exists = True
@@ -126,8 +124,7 @@ async def get_current_user_info(request: Request):
     user = await get_current_user(request)
 
     # Get full profile from Redis
-    redis = await get_redis()
-    profile_data = await redis.json().get(f"user:{user['id']}")
+    profile_data = await json_get(f"user:{user['id']}")
 
     return {
         "user": user,
@@ -141,21 +138,33 @@ async def logout():
     return {"status": "ok", "message": "Logged out"}
 
 
-@router.post("/token")
-async def create_token(request: TokenRequest):
-    """Create a JWT token for the given user data"""
-    token_data = {"sub": request.user_id}
+@router.post("/dev-token")
+async def create_dev_token(user_id: str = "dev_user_123", name: str = "Dev User"):
+    """
+    DEV ONLY: Create a test JWT token without OAuth.
+    Remove this endpoint in production!
+    """
+    import os
+    if os.getenv("ENV", "development") == "production":
+        raise HTTPException(status_code=404, detail="Not found")
 
-    if request.email:
-        token_data["email"] = request.email
-    if request.name:
-        token_data["name"] = request.name
-    if request.picture:
-        token_data["picture"] = request.picture
+    # Create or update user profile
+    profile_key = f"user:{user_id}"
+    existing = await json_get(profile_key)
 
-    access_token = create_access_token(token_data)
+    if not existing:
+        profile = UserProfile(
+            user_id=user_id,
+            email=f"{user_id}@dev.local",
+            name=name
+        )
+        await json_set(profile_key, "$", profile.model_dump())
 
-    return {
-        "access_token": access_token,
-        "token_type": "bearer"
-    }
+    # Create JWT
+    access_token = create_access_token({
+        "sub": user_id,
+        "email": f"{user_id}@dev.local",
+        "name": name
+    })
+
+    return {"access_token": access_token, "user_id": user_id}
